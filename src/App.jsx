@@ -20,9 +20,11 @@ const App = () => {
   });
   const [locationFilter, setLocationFilter] = useState('');
   const [stateFilter, setStateFilter] = useState('');
+  const [loadMode, setLoadMode] = useState('quick'); // 'quick' ou 'full'
+  const [isFullDataLoaded, setIsFullDataLoaded] = useState(false);
 
   // Função para buscar dados REAIS da API da Caixa
-  const fetchDraws = useCallback(async () => {
+  const fetchDraws = useCallback(async (mode = 'quick') => {
     setLoading(true);
     setError(null);
     setLoadingProgress({ current: 0, total: 0 });
@@ -36,9 +38,20 @@ const App = () => {
       
       console.log(`Último concurso: ${latestNumber}`);
       
-      // Buscar TODOS os concursos desde o primeiro (1996)
-      const startConcurso = 1; // Primeiro concurso da Mega-Sena foi em 1996
-      const concursosParaBuscar = latestNumber;
+      // Determinar quantos concursos buscar baseado no modo
+      let startConcurso, concursosParaBuscar;
+      
+      if (mode === 'quick') {
+        // Carregar apenas os últimos 10 concursos
+        startConcurso = Math.max(1, latestNumber - 9);
+        concursosParaBuscar = 10;
+        console.log(`Modo rápido: buscando últimos 10 concursos (${startConcurso} ao ${latestNumber})`);
+      } else {
+        // Carregar TODOS os concursos desde o primeiro (1996)
+        startConcurso = 1;
+        concursosParaBuscar = latestNumber;
+        console.log(`Modo completo: buscando TODOS os concursos (1 ao ${latestNumber})`);
+      }
       
       setLoadingProgress({ current: 0, total: concursosParaBuscar });
       
@@ -46,10 +59,10 @@ const App = () => {
       const batchSize = 5; // Buscar em lotes menores para todos os dados
       
       // Buscar concursos em lotes para melhor performance
-      console.log(`Buscando ${concursosParaBuscar} concursos (do #1 ao #${latestNumber})...`);
-      for (let i = startConcurso; i <= latestNumber; i += batchSize) {
+      const endConcurso = mode === 'quick' ? latestNumber : latestNumber;
+      for (let i = startConcurso; i <= endConcurso; i += batchSize) {
         const batch = [];
-        const endBatch = Math.min(i + batchSize - 1, latestNumber);
+        const endBatch = Math.min(i + batchSize - 1, endConcurso);
         
         // Criar promises para buscar em paralelo
         for (let j = i; j <= endBatch; j++) {
@@ -114,9 +127,10 @@ const App = () => {
           total: concursosParaBuscar 
         });
         
-        // Delay maior para não sobrecarregar a API ao buscar todos os dados
-        if (i + batchSize <= latestNumber) {
-          await new Promise(resolve => setTimeout(resolve, 200)); // 200ms entre lotes
+        // Delay para não sobrecarregar a API
+        if (i + batchSize <= endConcurso) {
+          const delay = mode === 'quick' ? 100 : 200; // Delay menor para modo rápido
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
       
@@ -126,18 +140,28 @@ const App = () => {
       console.log(`Total de concursos carregados: ${allDraws.length}`);
       setDraws(allDraws);
       
-      // Salvar no localStorage para cache
-      localStorage.setItem('megasena_data', JSON.stringify(allDraws));
-      localStorage.setItem('megasena_data_date', new Date().toISOString());
+      // Atualizar estado do carregamento completo
+      if (mode === 'full') {
+        setIsFullDataLoaded(true);
+        // Salvar dados completos no localStorage
+        localStorage.setItem('megasena_data_full', JSON.stringify(allDraws));
+        localStorage.setItem('megasena_data_full_date', new Date().toISOString());
+      } else {
+        // Salvar dados rápidos no localStorage
+        localStorage.setItem('megasena_data_quick', JSON.stringify(allDraws));
+        localStorage.setItem('megasena_data_quick_date', new Date().toISOString());
+      }
       
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
       setError('Erro ao carregar dados da Mega-Sena. Tentando usar cache local...');
       
-      // Tentar carregar do cache
-      const cachedData = localStorage.getItem('megasena_data');
+      // Tentar carregar do cache apropriado
+      const cacheKey = mode === 'full' ? 'megasena_data_full' : 'megasena_data_quick';
+      const cachedData = localStorage.getItem(cacheKey);
       if (cachedData) {
         setDraws(JSON.parse(cachedData));
+        if (mode === 'full') setIsFullDataLoaded(true);
         setError('Usando dados do cache. Clique em "Atualizar" para buscar dados mais recentes.');
       } else {
         setError('Erro ao carregar dados. Por favor, verifique sua conexão e tente novamente.');
@@ -147,25 +171,49 @@ const App = () => {
     }
   }, []);
 
+  // Função para carregar todos os dados
+  const loadFullData = useCallback(async () => {
+    setLoadMode('full');
+    await fetchDraws('full');
+  }, [fetchDraws]);
+
   // Buscar dados ao carregar a página
   useEffect(() => {
-    // Verificar se há dados em cache recentes (menos de 1 hora)
-    const cachedData = localStorage.getItem('megasena_data');
-    const cacheDate = localStorage.getItem('megasena_data_date');
+    // Primeiro, verificar se há dados completos em cache
+    const cachedFullData = localStorage.getItem('megasena_data_full');
+    const fullCacheDate = localStorage.getItem('megasena_data_full_date');
     
-    if (cachedData && cacheDate) {
-      const cacheAge = Date.now() - new Date(cacheDate).getTime();
-      const sixHours = 6 * 60 * 60 * 1000; // 6 horas de cache para dados completos
+    if (cachedFullData && fullCacheDate) {
+      const cacheAge = Date.now() - new Date(fullCacheDate).getTime();
+      const sixHours = 6 * 60 * 60 * 1000;
       
       if (cacheAge < sixHours) {
-        console.log(`Usando dados do cache completo (${JSON.parse(cachedData).length} concursos)`);
-        setDraws(JSON.parse(cachedData));
+        console.log(`Usando dados completos do cache (${JSON.parse(cachedFullData).length} concursos)`);
+        setDraws(JSON.parse(cachedFullData));
+        setIsFullDataLoaded(true);
+        setLoadMode('full');
         return;
       }
     }
     
-    // Se não há cache ou é antigo, buscar novos dados
-    fetchDraws();
+    // Caso contrário, verificar cache rápido
+    const cachedQuickData = localStorage.getItem('megasena_data_quick');
+    const quickCacheDate = localStorage.getItem('megasena_data_quick_date');
+    
+    if (cachedQuickData && quickCacheDate) {
+      const cacheAge = Date.now() - new Date(quickCacheDate).getTime();
+      const oneHour = 60 * 60 * 1000; // 1 hora de cache para dados rápidos
+      
+      if (cacheAge < oneHour) {
+        console.log(`Usando dados rápidos do cache (${JSON.parse(cachedQuickData).length} concursos)`);
+        setDraws(JSON.parse(cachedQuickData));
+        setLoadMode('quick');
+        return;
+      }
+    }
+    
+    // Se não há cache válido, buscar dados no modo rápido
+    fetchDraws('quick');
   }, [fetchDraws]);
 
   // Filtrar dados por período e localização
@@ -598,7 +646,12 @@ const App = () => {
               </h1>
               <p className="text-gray-600">
                 <span className="font-semibold text-green-600">DADOS REAIS</span> • 
-                {draws.length} concursos carregados • 
+                {draws.length} concursos carregados
+                {!isFullDataLoaded && (
+                  <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold">
+                    Carregamento rápido - Clique para carregar histórico completo
+                  </span>
+                )} • 
                 Último: #{draws[0]?.concurso} ({draws[0]?.data})
               </p>
             </div>
@@ -615,13 +668,23 @@ const App = () => {
                 {currentView === 'analysis' ? 'Ver Calendário' : 'Ver Análises'}
               </button>
               <button
-                onClick={fetchDraws}
+                onClick={() => fetchDraws(loadMode)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
                 disabled={loading}
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 Atualizar
               </button>
+              {!isFullDataLoaded && (
+                <button
+                  onClick={loadFullData}
+                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-colors flex items-center gap-2 font-semibold shadow-lg"
+                  disabled={loading}
+                >
+                  <Download className="w-4 h-4" />
+                  Carregar Histórico Completo
+                </button>
+              )}
               <button
                 onClick={exportToExcel}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
