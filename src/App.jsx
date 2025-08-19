@@ -18,6 +18,8 @@ const App = () => {
     patterns: true,
     predictions: true
   });
+  const [locationFilter, setLocationFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
 
   // Função para buscar dados REAIS da API da Caixa
   const fetchDraws = useCallback(async () => {
@@ -81,9 +83,28 @@ const App = () => {
               proximoConcurso: data.numeroConcursoProximo,
               dataProximoConcurso: data.dataProximoConcurso,
               localSorteio: data.localSorteio?.localSorteio || '',
+              cidadeSorteio: data.nomeMunicipioUFSorteio || '',
+              municipiosGanhadores: data.listaMunicipioUFGanhadores || [],
+              isMegaDaVirada: data.indicadorConcursoEspecial === 2 || data.data?.includes('31/12') || false,
               premioSena: data.listaRateioPremio?.find(r => r.descricaoFaixa === "6 acertos")?.valorPremio || 0,
               premioQuina: data.listaRateioPremio?.find(r => r.descricaoFaixa === "5 acertos")?.valorPremio || 0,
               premioQuadra: data.listaRateioPremio?.find(r => r.descricaoFaixa === "4 acertos")?.valorPremio || 0,
+              premioTotalSena: (() => {
+                const senaInfo = data.listaRateioPremio?.find(r => r.descricaoFaixa === "6 acertos");
+                if (!senaInfo) return 0;
+                
+                // Se há ganhadores, calcular total = valor individual × quantidade
+                if (senaInfo.numeroDeGanhadores > 0 && senaInfo.valorPremio > 0) {
+                  return (senaInfo.valorPremio || 0) * senaInfo.numeroDeGanhadores;
+                }
+                
+                // Se acumulou, usar valor acumulado ou estimado
+                const valorAcumulado = parseFloat(data.valorAcumuladoConcurso_0_5 || 0);
+                const valorEstimado = parseFloat(data.valorEstimadoProximoConcurso || 0);
+                
+                // Retornar o maior entre valor acumulado e estimado
+                return Math.max(valorAcumulado, valorEstimado);
+              })(),
             });
           }
         });
@@ -147,27 +168,52 @@ const App = () => {
     fetchDraws();
   }, [fetchDraws]);
 
-  // Filtrar dados por período
+  // Filtrar dados por período e localização
   const filteredDraws = useMemo(() => {
     if (!draws.length) return [];
     
+    let filtered = [];
+    
     switch (selectedPeriod) {
       case 'last50':
-        return draws.slice(0, 50);
+        filtered = draws.slice(0, 50);
+        break;
       case 'last100':
-        return draws.slice(0, 100);
+        filtered = draws.slice(0, 100);
+        break;
       case 'last200':
-        return draws.slice(0, 200);
+        filtered = draws.slice(0, 200);
+        break;
       case 'last365':
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        return draws.filter(d => new Date(d.data) >= oneYearAgo);
+        filtered = draws.filter(d => new Date(d.data) >= oneYearAgo);
+        break;
       case 'all':
-        return draws;
+        filtered = draws;
+        break;
       default:
-        return draws.slice(0, 100);
+        filtered = draws.slice(0, 100);
     }
-  }, [draws, selectedPeriod]);
+    
+    // Filtrar por cidade do sorteio
+    if (locationFilter) {
+      filtered = filtered.filter(draw => 
+        draw.cidadeSorteio && 
+        draw.cidadeSorteio.toLowerCase().includes(locationFilter.toLowerCase())
+      );
+    }
+    
+    // Filtrar por estado
+    if (stateFilter) {
+      filtered = filtered.filter(draw => 
+        draw.cidadeSorteio && 
+        draw.cidadeSorteio.toLowerCase().includes(stateFilter.toLowerCase())
+      );
+    }
+    
+    return filtered;
+  }, [draws, selectedPeriod, locationFilter, stateFilter]);
 
   // Análise de frequência de números
   const numberFrequency = useMemo(() => {
@@ -309,6 +355,63 @@ const App = () => {
       }))
       .sort((a, b) => b.delay - a.delay);
   }, [numberFrequency]);
+
+  // Análise geográfica
+  const geographicAnalysis = useMemo(() => {
+    if (!draws.length) return { cities: {}, states: {}, totalDrawsWithLocation: 0 };
+    
+    const cities = {};
+    const states = {};
+    let totalDrawsWithLocation = 0;
+    
+    draws.forEach(draw => {
+      if (draw.cidadeSorteio) {
+        totalDrawsWithLocation++;
+        
+        // Análise por cidade completa
+        if (!cities[draw.cidadeSorteio]) {
+          cities[draw.cidadeSorteio] = {
+            count: 0,
+            totalWinners: 0,
+            totalAccumulated: 0,
+            draws: []
+          };
+        }
+        cities[draw.cidadeSorteio].count++;
+        cities[draw.cidadeSorteio].totalWinners += (draw.ganhadores6 || 0);
+        if (draw.acumulado) cities[draw.cidadeSorteio].totalAccumulated++;
+        cities[draw.cidadeSorteio].draws.push(draw);
+        
+        // Análise por estado (extrai UF do final da string)
+        const stateMatch = draw.cidadeSorteio.match(/,\s*([A-Z]{2})$/);
+        if (stateMatch) {
+          const state = stateMatch[1];
+          if (!states[state]) {
+            states[state] = {
+              count: 0,
+              totalWinners: 0,
+              cities: new Set()
+            };
+          }
+          states[state].count++;
+          states[state].totalWinners += (draw.ganhadores6 || 0);
+          states[state].cities.add(draw.cidadeSorteio);
+        }
+      }
+    });
+    
+    // Converter sets para arrays e calcular percentuais
+    Object.keys(states).forEach(state => {
+      states[state].cities = Array.from(states[state].cities);
+      states[state].percentage = ((states[state].count / totalDrawsWithLocation) * 100).toFixed(2);
+    });
+    
+    Object.keys(cities).forEach(city => {
+      cities[city].percentage = ((cities[city].count / totalDrawsWithLocation) * 100).toFixed(2);
+    });
+    
+    return { cities, states, totalDrawsWithLocation };
+  }, [draws]);
 
   // Exportar para Excel
   const exportToExcel = () => {
@@ -556,9 +659,16 @@ const App = () => {
               </div>
               
               <div className="text-center mb-6">
-                <h2 className="text-4xl font-bold text-gray-800 mb-2">
-                  Concurso #{selectedDraw.concurso}
-                </h2>
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <h2 className="text-4xl font-bold text-gray-800">
+                    Concurso #{selectedDraw.concurso}
+                  </h2>
+                  {selectedDraw.isMegaDaVirada && (
+                    <div className="bg-gradient-to-r from-yellow-400 to-yellow-600 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg animate-pulse">
+                      🎊 MEGA DA VIRADA 🎊
+                    </div>
+                  )}
+                </div>
                 <div className="flex justify-center gap-2 mb-4">
                   {selectedDraw.dezenas.map(num => (
                     <span
@@ -569,12 +679,22 @@ const App = () => {
                     </span>
                   ))}
                 </div>
-                {selectedDraw.localSorteio && (
-                  <div className="flex items-center justify-center gap-2 text-gray-600">
-                    <MapPin className="w-4 h-4" />
-                    <span>{selectedDraw.localSorteio}</span>
-                  </div>
-                )}
+                <div className="flex flex-col items-center gap-2 text-gray-600">
+                  {selectedDraw.localSorteio && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      <span>{selectedDraw.localSorteio}</span>
+                    </div>
+                  )}
+                  {selectedDraw.cidadeSorteio && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium">Cidade do Sorteio:</span>
+                      <span className="bg-blue-100 px-2 py-1 rounded-full text-blue-700">
+                        {selectedDraw.cidadeSorteio}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -593,12 +713,20 @@ const App = () => {
                     </span>
                   </div>
                   {selectedDraw.ganhadores6 > 0 ? (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Prêmio por ganhador:</span>
-                      <span className="font-bold text-green-600">
-                        R$ {(selectedDraw.premioSena || 0).toLocaleString('pt-BR')}
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Premiação total:</span>
+                        <span className="font-bold text-purple-600 text-lg">
+                          R$ {(selectedDraw.premioTotalSena || 0).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Prêmio por ganhador:</span>
+                        <span className="font-bold text-green-600">
+                          R$ {(selectedDraw.premioSena || 0).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                    </>
                   ) : (
                     <div className="text-center py-2">
                       <span className="text-orange-500 font-bold text-lg">ACUMULOU!</span>
@@ -650,6 +778,30 @@ const App = () => {
               </div>
             </div>
 
+            {/* Informações de Localização dos Ganhadores */}
+            {selectedDraw.municipiosGanhadores && selectedDraw.municipiosGanhadores.length > 0 && (
+              <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-green-600" />
+                  Cidades dos Ganhadores
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {selectedDraw.municipiosGanhadores.map((municipio, index) => (
+                    <div key={index} className="bg-green-50 rounded-lg p-4 border border-green-200">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-green-800">
+                          {municipio.nomeMunicipioUF}
+                        </span>
+                        <span className="bg-green-600 text-white px-2 py-1 rounded-full text-sm">
+                          {municipio.serie || '1'} ganhador(es)
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Informações Adicionais */}
             <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
               <h3 className="text-xl font-bold text-gray-800 mb-4">Informações do Concurso</h3>
@@ -659,6 +811,12 @@ const App = () => {
                     <span className="text-gray-600 font-medium">Data do Sorteio:</span>
                     <span className="font-bold">{selectedDraw.data}</span>
                   </div>
+                  {selectedDraw.cidadeSorteio && (
+                    <div className="flex justify-between py-2 border-b border-gray-100">
+                      <span className="text-gray-600 font-medium">Cidade do Sorteio:</span>
+                      <span className="font-bold text-blue-600">{selectedDraw.cidadeSorteio}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Valor Arrecadado:</span>
                     <span className="font-bold text-green-600">
@@ -807,9 +965,14 @@ const App = () => {
                               <button
                                 key={draw.concurso}
                                 onClick={() => selectDraw(draw)}
-                                className="w-full text-xs bg-green-600 text-white rounded px-1 py-0.5 hover:bg-green-700 transition-colors"
+                                className={`w-full text-xs rounded px-1 py-0.5 transition-colors ${
+                                  draw.isMegaDaVirada 
+                                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white hover:from-yellow-600 hover:to-yellow-700 font-bold shadow-md' 
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
                               >
                                 #{draw.concurso}
+                                {draw.isMegaDaVirada && ' 🎊'}
                               </button>
                             ))}
                           </div>
@@ -870,37 +1033,93 @@ const App = () => {
           <>
             {/* Filtros */}
             <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-4 items-center">
-            <div className="flex items-center gap-2">
-              <Filter className="w-5 h-5 text-gray-600" />
-              <span className="font-semibold">Período de Análise:</span>
+              <div className="space-y-4">
+                {/* Filtros de Período */}
+                <div className="flex flex-col md:flex-row gap-4 items-center">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-5 h-5 text-gray-600" />
+                    <span className="font-semibold">Período de Análise:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 'last50', label: 'Últimos 50' },
+                      { value: 'last100', label: 'Últimos 100' },
+                      { value: 'last200', label: 'Últimos 200' },
+                      { value: 'last365', label: 'Último ano' },
+                      { value: 'all', label: `Todos (${draws.length})` }
+                    ].map(period => (
+                      <button
+                        key={period.value}
+                        onClick={() => setSelectedPeriod(period.value)}
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                          selectedPeriod === period.value
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        {period.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Filtros Geográficos */}
+                <div className="flex flex-col md:flex-row gap-4 items-center pt-4 border-t border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-gray-600" />
+                    <span className="font-semibold">Filtros Geográficos:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Cidade:</label>
+                      <input
+                        type="text"
+                        value={locationFilter}
+                        onChange={(e) => setLocationFilter(e.target.value)}
+                        placeholder="Ex: São Paulo, Rio de Janeiro..."
+                        className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Estado:</label>
+                      <select
+                        value={stateFilter}
+                        onChange={(e) => setStateFilter(e.target.value)}
+                        className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Todos os estados</option>
+                        {Object.keys(geographicAnalysis.states).sort().map(state => (
+                          <option key={state} value={state}>
+                            {state} ({geographicAnalysis.states[state].count} sorteios)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {(locationFilter || stateFilter) && (
+                      <button
+                        onClick={() => {
+                          setLocationFilter('');
+                          setStateFilter('');
+                        }}
+                        className="px-3 py-1 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors"
+                      >
+                        Limpar Filtros
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Informações do Filtro Atual */}
+                <div className="flex items-center gap-4 text-sm text-gray-600">
+                  <span>Mostrando {filteredDraws.length} concursos</span>
+                  {locationFilter && <span>• Cidade: "{locationFilter}"</span>}
+                  {stateFilter && <span>• Estado: {stateFilter}</span>}
+                </div>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { value: 'last50', label: 'Últimos 50' },
-                { value: 'last100', label: 'Últimos 100' },
-                { value: 'last200', label: 'Últimos 200' },
-                { value: 'last365', label: 'Último ano' },
-                { value: 'all', label: `Todos (${draws.length})` }
-              ].map(period => (
-                <button
-                  key={period.value}
-                  onClick={() => setSelectedPeriod(period.value)}
-                  className={`px-4 py-2 rounded-lg transition-colors ${
-                    selectedPeriod === period.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  {period.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
 
         {/* Cards de Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
           <StatCard
             icon={Award}
             title="Concursos Analisados"
@@ -910,13 +1129,20 @@ const App = () => {
           />
           <StatCard
             icon={DollarSign}
-            title="Maior Prêmio"
-            value={`R$ ${Math.max(...filteredDraws.map(d => d.premioSena || 0)).toLocaleString('pt-BR')}`}
-            subtitle="Prêmio pago"
+            title="Maior Premiação Total"
+            value={`R$ ${Math.max(...filteredDraws.map(d => d.premioTotalSena || 0)).toLocaleString('pt-BR')}`}
+            subtitle={filteredDraws.find(d => d.premioTotalSena === Math.max(...filteredDraws.map(d => d.premioTotalSena || 0)))?.isMegaDaVirada ? 'Mega da Virada' : 'Prêmio total'}
             color="#10b981"
           />
           <StatCard
             icon={Users}
+            title="Maior Prêmio Individual"
+            value={`R$ ${Math.max(...filteredDraws.map(d => d.premioSena || 0)).toLocaleString('pt-BR')}`}
+            subtitle={filteredDraws.find(d => d.premioSena === Math.max(...filteredDraws.map(d => d.premioSena || 0)))?.isMegaDaVirada ? 'Mega da Virada' : 'Por ganhador'}
+            color="#3b82f6"
+          />
+          <StatCard
+            icon={Trophy}
             title="Total de Ganhadores"
             value={filteredDraws.reduce((acc, d) => acc + (d.ganhadores6 || 0), 0)}
             subtitle="Sena completa no período"
@@ -929,6 +1155,13 @@ const App = () => {
             subtitle="Soma dos 6 números"
             color="#8b5cf6"
           />
+          <StatCard
+            icon={Star}
+            title="Mega da Virada"
+            value={filteredDraws.filter(d => d.isMegaDaVirada).length}
+            subtitle={`Total: R$ ${Math.max(...filteredDraws.filter(d => d.isMegaDaVirada).map(d => d.premioTotalSena || 0), 0).toLocaleString('pt-BR')}`}
+            color="#eab308"
+          />
         </div>
 
         {/* Tabs de Análise */}
@@ -939,7 +1172,8 @@ const App = () => {
               { id: 'delays', label: '⏱️ Atrasos' },
               { id: 'patterns', label: '🎯 Padrões' },
               { id: 'pairs', label: '👥 Pares' },
-              { id: 'decades', label: '📈 Décadas' }
+              { id: 'decades', label: '📈 Décadas' },
+              { id: 'geography', label: '🗺️ Geografia' }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -1261,6 +1495,150 @@ const App = () => {
               </ResponsiveContainer>
             </div>
           )}
+
+          {activeTab === 'geography' && (
+            <div>
+              <h3 className="text-xl font-bold mb-4">Análise Geográfica dos Sorteios</h3>
+              
+              {/* Estatísticas Gerais */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-700 mb-2">📍 Total de Locais</h4>
+                  <div className="text-2xl font-bold text-blue-600">
+                    {Object.keys(geographicAnalysis.cities).length}
+                  </div>
+                  <div className="text-sm text-gray-600">Cidades diferentes</div>
+                </div>
+                
+                <div className="bg-green-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-green-700 mb-2">🏛️ Estados</h4>
+                  <div className="text-2xl font-bold text-green-600">
+                    {Object.keys(geographicAnalysis.states).length}
+                  </div>
+                  <div className="text-sm text-gray-600">Estados com sorteios</div>
+                </div>
+                
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-purple-700 mb-2">📊 Com Localização</h4>
+                  <div className="text-2xl font-bold text-purple-600">
+                    {geographicAnalysis.totalDrawsWithLocation}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {((geographicAnalysis.totalDrawsWithLocation / draws.length) * 100).toFixed(1)}% do total
+                  </div>
+                </div>
+              </div>
+
+              {/* Top Cidades */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">🏆 Top 10 Cidades com Mais Sorteios</h4>
+                  <div className="space-y-2">
+                    {Object.entries(geographicAnalysis.cities)
+                      .sort((a, b) => b[1].count - a[1].count)
+                      .slice(0, 10)
+                      .map(([city, data], index) => (
+                        <div key={city} className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-500 w-6">#{index + 1}</span>
+                            <span className="font-medium">{city}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-bold text-blue-600">{data.count} sorteios</span>
+                            <div className="text-xs text-gray-500">{data.percentage}%</div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">🏛️ Estatísticas por Estado</h4>
+                  <div className="space-y-2">
+                    {Object.entries(geographicAnalysis.states)
+                      .sort((a, b) => b[1].count - a[1].count)
+                      .slice(0, 10)
+                      .map(([state, data]) => (
+                        <div key={state} className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-green-600 w-8">{state}</span>
+                            <span className="text-sm text-gray-600">{data.cities.length} cidades</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-bold text-green-600">{data.count} sorteios</span>
+                            <div className="text-xs text-gray-500">{data.percentage}%</div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção Mega da Virada */}
+              {filteredDraws.some(d => d.isMegaDaVirada) && (
+                <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 rounded-lg p-4 border-2 border-yellow-300 mb-6">
+                  <h4 className="font-semibold text-yellow-800 mb-3 flex items-center gap-2">
+                    🎊 Mega da Virada - Análise Especial
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {filteredDraws.filter(d => d.isMegaDaVirada).map(draw => (
+                      <div key={draw.concurso} className="bg-white rounded-lg p-3 border border-yellow-300">
+                        <div className="text-sm font-bold text-yellow-800">#{draw.concurso} - {draw.data}</div>
+                        <div className="space-y-1">
+                          <div className="text-lg font-bold text-purple-600">
+                            Total: R$ {(draw.premioTotalSena || 0).toLocaleString('pt-BR')}
+                          </div>
+                          <div className="text-md font-bold text-green-600">
+                            Individual: R$ {(draw.premioSena || 0).toLocaleString('pt-BR')}
+                          </div>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {draw.ganhadores6} ganhador(es) • {draw.cidadeSorteio}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Gráfico de Estados */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-700 mb-3">📊 Distribuição de Sorteios por Estado</h4>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart 
+                    data={Object.entries(geographicAnalysis.states)
+                      .map(([state, data]) => ({
+                        state,
+                        count: data.count,
+                        percentage: data.percentage
+                      }))
+                      .sort((a, b) => b.count - a.count)
+                      .slice(0, 15)
+                    }
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="state" />
+                    <YAxis />
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload[0]) {
+                          return (
+                            <div className="bg-white p-2 border rounded shadow">
+                              <p className="font-semibold">Estado: {payload[0].payload.state}</p>
+                              <p>Sorteios: {payload[0].value}</p>
+                              <p>Porcentagem: {payload[0].payload.percentage}%</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="count" fill="#10b981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Seção de Insights */}
@@ -1326,8 +1704,17 @@ const App = () => {
                   </thead>
                   <tbody>
                     {filteredDraws.slice(0, 15).map((draw, index) => (
-                      <tr key={draw.concurso} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                        <td className="py-2 px-2 font-bold">#{draw.concurso}</td>
+                      <tr key={draw.concurso} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} ${draw.isMegaDaVirada ? 'ring-2 ring-yellow-400 bg-yellow-50' : ''}`}>
+                        <td className="py-2 px-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold">#{draw.concurso}</span>
+                            {draw.isMegaDaVirada && (
+                              <span className="bg-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                                VIRADA
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-2 px-2">{draw.data}</td>
                         <td className="py-2 px-2">
                           <div className="flex gap-1">
