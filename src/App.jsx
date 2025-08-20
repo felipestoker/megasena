@@ -515,14 +515,14 @@ const App = () => {
 
   // Componente de estatística
   const StatCard = ({ icon: Icon, title, value, subtitle, color = 'blue' }) => (
-    <div className="bg-white rounded-lg shadow-md p-6 border-l-4" style={{ borderColor: color }}>
+    <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6 border-l-4" style={{ borderColor: color }}>
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-600 mb-1">{title}</p>
-          <p className="text-2xl font-bold">{value}</p>
-          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm text-gray-600 mb-1 truncate">{title}</p>
+          <p className="text-lg sm:text-xl lg:text-2xl font-bold truncate" title={value}>{value}</p>
+          {subtitle && <p className="text-xs text-gray-500 mt-1 truncate" title={subtitle}>{subtitle}</p>}
         </div>
-        <Icon className="w-8 h-8 opacity-20" style={{ color }} />
+        <Icon className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 opacity-20 flex-shrink-0 ml-2" style={{ color }} />
       </div>
     </div>
   );
@@ -638,60 +638,74 @@ const App = () => {
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-4">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                🎰 Sistema Avançado de Análise da Mega-Sena
+        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-6">
+          <div className="flex flex-col space-y-4">
+            <div className="text-center sm:text-left">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-800 mb-2">
+                🎰 Mega-Sena Analytics
               </h1>
-              <p className="text-gray-600">
-                <span className="font-semibold text-green-600">DADOS REAIS</span> • 
-                {draws.length} concursos carregados
+              <div className="text-sm sm:text-base text-gray-600 space-y-1">
+                <div>
+                  <span className="font-semibold text-green-600">DADOS REAIS</span> • 
+                  {draws.length} concursos
+                </div>
                 {!isFullDataLoaded && (
-                  <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold">
-                    Carregamento rápido - Clique para carregar histórico completo
-                  </span>
-                )} • 
-                Último: #{draws[0]?.concurso} ({draws[0]?.data})
-              </p>
+                  <div className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold">
+                    Carregamento rápido - Toque para histórico completo
+                  </div>
+                )}
+                <div className="text-xs sm:text-sm">
+                  Último: #{draws[0]?.concurso} ({draws[0]?.data})
+                </div>
+              </div>
             </div>
-            <div className="flex gap-2 mt-4 md:mt-0">
-              <button
-                onClick={() => setCurrentView(currentView === 'analysis' ? 'calendar' : 'analysis')}
-                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                  currentView === 'calendar' 
-                    ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                    : 'bg-gray-600 text-white hover:bg-gray-700'
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                {currentView === 'analysis' ? 'Ver Calendário' : 'Ver Análises'}
-              </button>
-              <button
-                onClick={() => fetchDraws(loadMode)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                disabled={loading}
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                Atualizar
-              </button>
-              {!isFullDataLoaded && (
+            
+            {/* Botões reorganizados para mobile */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <div className="flex gap-2 flex-1">
                 <button
-                  onClick={loadFullData}
-                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-colors flex items-center gap-2 font-semibold shadow-lg"
+                  onClick={() => setCurrentView(currentView === 'analysis' ? 'calendar' : 'analysis')}
+                  className={`flex-1 sm:flex-none px-3 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${
+                    currentView === 'calendar' 
+                      ? 'bg-purple-600 text-white hover:bg-purple-700' 
+                      : 'bg-gray-600 text-white hover:bg-gray-700'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span className="hidden sm:inline">{currentView === 'analysis' ? 'Ver Calendário' : 'Ver Análises'}</span>
+                  <span className="sm:hidden">{currentView === 'analysis' ? 'Calendário' : 'Análises'}</span>
+                </button>
+                <button
+                  onClick={() => fetchDraws(loadMode)}
+                  className="flex-1 sm:flex-none px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
                   disabled={loading}
                 >
-                  <Download className="w-4 h-4" />
-                  Carregar Histórico Completo
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Atualizar</span>
                 </button>
-              )}
-              <button
-                onClick={exportToExcel}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                Exportar Excel
-              </button>
+              </div>
+              
+              <div className="flex gap-2">
+                {!isFullDataLoaded && (
+                  <button
+                    onClick={loadFullData}
+                    className="flex-1 sm:flex-none px-3 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-colors flex items-center justify-center gap-2 font-semibold shadow-lg text-sm"
+                    disabled={loading}
+                  >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline">Carregar Histórico Completo</span>
+                    <span className="sm:hidden">Histórico Completo</span>
+                  </button>
+                )}
+                <button
+                  onClick={exportToExcel}
+                  className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">Exportar Excel</span>
+                  <span className="sm:hidden">Excel</span>
+                </button>
+              </div>
             </div>
           </div>
           {error && (
@@ -732,11 +746,11 @@ const App = () => {
                     </div>
                   )}
                 </div>
-                <div className="flex justify-center gap-2 mb-4">
+                <div className="flex justify-center gap-1 sm:gap-2 mb-4 flex-wrap">
                   {selectedDraw.dezenas.map(num => (
                     <span
                       key={num}
-                      className="inline-block w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white text-center leading-12 font-bold text-lg shadow-lg"
+                      className="inline-block w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white text-center leading-10 sm:leading-12 font-bold text-sm sm:text-lg shadow-lg flex-shrink-0"
                     >
                       {String(num).padStart(2, '0')}
                     </span>
@@ -1095,15 +1109,15 @@ const App = () => {
         {currentView === 'analysis' && (
           <>
             {/* Filtros */}
-            <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-6">
               <div className="space-y-4">
                 {/* Filtros de Período */}
-                <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Filter className="w-5 h-5 text-gray-600" />
-                    <span className="font-semibold">Período de Análise:</span>
+                    <span className="font-semibold text-sm sm:text-base">Período de Análise:</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                     {[
                       { value: 'last50', label: 'Últimos 50' },
                       { value: 'last100', label: 'Últimos 100' },
@@ -1114,7 +1128,7 @@ const App = () => {
                       <button
                         key={period.value}
                         onClick={() => setSelectedPeriod(period.value)}
-                        className={`px-4 py-2 rounded-lg transition-colors ${
+                        className={`px-3 py-2 rounded-lg transition-colors text-sm ${
                           selectedPeriod === period.value
                             ? 'bg-blue-600 text-white'
                             : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
@@ -1127,62 +1141,64 @@ const App = () => {
                 </div>
                 
                 {/* Filtros Geográficos */}
-                <div className="flex flex-col md:flex-row gap-4 items-center pt-4 border-t border-gray-200">
+                <div className="space-y-3 pt-4 border-t border-gray-200">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-5 h-5 text-gray-600" />
-                    <span className="font-semibold">Filtros Geográficos:</span>
+                    <span className="font-semibold text-sm sm:text-base">Filtros Geográficos:</span>
                   </div>
-                  <div className="flex flex-wrap gap-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-gray-700">Cidade:</label>
+                  <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">Cidade:</label>
                       <input
                         type="text"
                         value={locationFilter}
                         onChange={(e) => setLocationFilter(e.target.value)}
-                        placeholder="Ex: São Paulo, Rio de Janeiro..."
-                        className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Ex: São Paulo..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-gray-700">Estado:</label>
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">Estado:</label>
                       <select
                         value={stateFilter}
                         onChange={(e) => setStateFilter(e.target.value)}
-                        className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">Todos os estados</option>
                         {Object.keys(geographicAnalysis.states).sort().map(state => (
                           <option key={state} value={state}>
-                            {state} ({geographicAnalysis.states[state].count} sorteios)
+                            {state} ({geographicAnalysis.states[state].count})
                           </option>
                         ))}
                       </select>
                     </div>
                     {(locationFilter || stateFilter) && (
-                      <button
-                        onClick={() => {
-                          setLocationFilter('');
-                          setStateFilter('');
-                        }}
-                        className="px-3 py-1 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors"
-                      >
-                        Limpar Filtros
-                      </button>
+                      <div className="flex items-end">
+                        <button
+                          onClick={() => {
+                            setLocationFilter('');
+                            setStateFilter('');
+                          }}
+                          className="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors"
+                        >
+                          Limpar Filtros
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
                 
                 {/* Informações do Filtro Atual */}
-                <div className="flex items-center gap-4 text-sm text-gray-600">
-                  <span>Mostrando {filteredDraws.length} concursos</span>
-                  {locationFilter && <span>• Cidade: "{locationFilter}"</span>}
-                  {stateFilter && <span>• Estado: {stateFilter}</span>}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-gray-600">
+                  <span className="font-medium">Mostrando {filteredDraws.length} concursos</span>
+                  {locationFilter && <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">Cidade: "{locationFilter}"</span>}
+                  {stateFilter && <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">Estado: {stateFilter}</span>}
                 </div>
               </div>
             </div>
 
         {/* Cards de Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 mb-6">
           <StatCard
             icon={Award}
             title="Concursos Analisados"
@@ -1228,28 +1244,31 @@ const App = () => {
         </div>
 
         {/* Tabs de Análise */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex flex-wrap gap-2 mb-6 border-b">
-            {[
-              { id: 'frequency', label: '📊 Frequência' },
-              { id: 'delays', label: '⏱️ Atrasos' },
-              { id: 'patterns', label: '🎯 Padrões' },
-              { id: 'pairs', label: '👥 Pares' },
-              { id: 'decades', label: '📈 Décadas' },
-              { id: 'geography', label: '🗺️ Geografia' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 font-medium transition-colors ${
-                  activeTab === tab.id
-                    ? 'text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-600 hover:text-gray-800'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-6">
+          <div className="mb-6">
+            <div className="flex overflow-x-auto pb-2 gap-1 sm:gap-2 border-b">
+              {[
+                { id: 'frequency', label: '📊 Frequência', shortLabel: '📊' },
+                { id: 'delays', label: '⏱️ Atrasos', shortLabel: '⏱️' },
+                { id: 'patterns', label: '🎯 Padrões', shortLabel: '🎯' },
+                { id: 'pairs', label: '👥 Pares', shortLabel: '👥' },
+                { id: 'decades', label: '📈 Décadas', shortLabel: '📈' },
+                { id: 'geography', label: '🗺️ Geografia', shortLabel: '🗺️' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-shrink-0 px-3 sm:px-4 py-2 font-medium transition-colors text-sm ${
+                    activeTab === tab.id
+                      ? 'text-blue-600 border-b-2 border-blue-600'
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Conteúdo das Tabs */}
@@ -1258,40 +1277,40 @@ const App = () => {
               <h3 className="text-xl font-bold mb-4">Análise de Frequência dos Números</h3>
               
               {/* Números Quentes e Frios */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div className="space-y-6 mb-6">
                 <div className="bg-red-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-red-700 mb-3 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5" />
+                  <h4 className="font-semibold text-red-700 mb-3 flex items-center gap-2 text-sm sm:text-base">
+                    <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
                     Top 10 Números Mais Sorteados
                   </h4>
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 sm:gap-2">
                     {numberFrequency.slice(0, 10).map(item => (
                       <div
                         key={item.number}
-                        className="bg-white rounded-lg p-3 text-center shadow-sm border border-red-200 hover:shadow-md transition-shadow"
+                        className="bg-white rounded-lg p-2 sm:p-3 text-center shadow-sm border border-red-200 hover:shadow-md transition-shadow"
                       >
-                        <div className="text-2xl font-bold text-red-600">{String(item.number).padStart(2, '0')}</div>
+                        <div className="text-lg sm:text-2xl font-bold text-red-600">{String(item.number).padStart(2, '0')}</div>
                         <div className="text-xs text-gray-600">{item.count}x</div>
-                        <div className="text-xs text-gray-500">{item.percentage}%</div>
+                        <div className="text-xs text-gray-500 hidden sm:block">{item.percentage}%</div>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 <div className="bg-blue-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-700 mb-3 flex items-center gap-2">
-                    <TrendingDown className="w-5 h-5" />
+                  <h4 className="font-semibold text-blue-700 mb-3 flex items-center gap-2 text-sm sm:text-base">
+                    <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5" />
                     Top 10 Números Menos Sorteados
                   </h4>
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 sm:gap-2">
                     {numberFrequency.slice(-10).reverse().map(item => (
                       <div
                         key={item.number}
-                        className="bg-white rounded-lg p-3 text-center shadow-sm border border-blue-200 hover:shadow-md transition-shadow"
+                        className="bg-white rounded-lg p-2 sm:p-3 text-center shadow-sm border border-blue-200 hover:shadow-md transition-shadow"
                       >
-                        <div className="text-2xl font-bold text-blue-600">{String(item.number).padStart(2, '0')}</div>
+                        <div className="text-lg sm:text-2xl font-bold text-blue-600">{String(item.number).padStart(2, '0')}</div>
                         <div className="text-xs text-gray-600">{item.count}x</div>
-                        <div className="text-xs text-gray-500">{item.percentage}%</div>
+                        <div className="text-xs text-gray-500 hidden sm:block">{item.percentage}%</div>
                       </div>
                     ))}
                   </div>
@@ -1299,7 +1318,8 @@ const App = () => {
               </div>
 
               {/* Gráfico de Barras */}
-              <ResponsiveContainer width="100%" height={400}>
+              <div className="h-64 sm:h-80 lg:h-96">
+              <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={numberFrequency}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
@@ -1331,6 +1351,7 @@ const App = () => {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+              </div>
             </div>
           )}
 
@@ -1339,14 +1360,14 @@ const App = () => {
               <h3 className="text-xl font-bold mb-4">Análise de Atrasos (Concursos sem aparecer)</h3>
               
               <div className="mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="space-y-4 sm:grid sm:grid-cols-1 lg:grid-cols-3 sm:gap-4 sm:space-y-0 mb-4">
                   <div className="bg-red-50 rounded-lg p-4">
-                    <h4 className="font-semibold text-red-700 mb-2">⚠️ Muito Atrasados (15+ jogos)</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {delayAnalysis.filter(d => d.delay > 15).slice(0, 10).map(item => (
+                    <h4 className="font-semibold text-red-700 mb-2 text-sm sm:text-base">⚠️ Muito Atrasados (15+)</h4>
+                    <div className="flex flex-wrap gap-1 sm:gap-2">
+                      {delayAnalysis.filter(d => d.delay > 15).slice(0, 8).map(item => (
                         <span
                           key={item.number}
-                          className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold"
+                          className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs sm:text-sm font-semibold"
                         >
                           {String(item.number).padStart(2, '0')} ({item.delay})
                         </span>
@@ -1355,12 +1376,12 @@ const App = () => {
                   </div>
                   
                   <div className="bg-yellow-50 rounded-lg p-4">
-                    <h4 className="font-semibold text-yellow-700 mb-2">⏳ Atraso Médio (8-15 jogos)</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {delayAnalysis.filter(d => d.delay > 8 && d.delay <= 15).slice(0, 10).map(item => (
+                    <h4 className="font-semibold text-yellow-700 mb-2 text-sm sm:text-base">⏳ Atraso Médio (8-15)</h4>
+                    <div className="flex flex-wrap gap-1 sm:gap-2">
+                      {delayAnalysis.filter(d => d.delay > 8 && d.delay <= 15).slice(0, 8).map(item => (
                         <span
                           key={item.number}
-                          className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-semibold"
+                          className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs sm:text-sm font-semibold"
                         >
                           {String(item.number).padStart(2, '0')} ({item.delay})
                         </span>
@@ -1369,12 +1390,12 @@ const App = () => {
                   </div>
                   
                   <div className="bg-green-50 rounded-lg p-4">
-                    <h4 className="font-semibold text-green-700 mb-2">✅ Recentes (0-8 jogos)</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {delayAnalysis.filter(d => d.delay <= 8).slice(0, 10).map(item => (
+                    <h4 className="font-semibold text-green-700 mb-2 text-sm sm:text-base">✅ Recentes (0-8)</h4>
+                    <div className="flex flex-wrap gap-1 sm:gap-2">
+                      {delayAnalysis.filter(d => d.delay <= 8).slice(0, 8).map(item => (
                         <span
                           key={item.number}
-                          className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold"
+                          className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs sm:text-sm font-semibold"
                         >
                           {String(item.number).padStart(2, '0')} ({item.delay})
                         </span>
@@ -1384,7 +1405,8 @@ const App = () => {
                 </div>
               </div>
 
-              <ResponsiveContainer width="100%" height={400}>
+              <div className="h-64 sm:h-80 lg:h-96">
+              <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={delayAnalysis.slice(0, 30)}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="number" />
@@ -1397,6 +1419,7 @@ const App = () => {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+              </div>
             </div>
           )}
 
@@ -1408,7 +1431,8 @@ const App = () => {
                 {/* Distribuição Par/Ímpar */}
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h4 className="font-semibold mb-3">Distribuição Par/Ímpar</h4>
-                  <ResponsiveContainer width="100%" height={200}>
+                  <div className="h-32 sm:h-40 lg:h-48">
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={[
@@ -1419,7 +1443,7 @@ const App = () => {
                         cy="50%"
                         labelLine={false}
                         label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
-                        outerRadius={80}
+                        outerRadius={"70%"}
                         fill="#8884d8"
                         dataKey="value"
                       >
@@ -1429,12 +1453,14 @@ const App = () => {
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
+                  </div>
                 </div>
 
                 {/* Distribuição Baixo/Alto */}
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h4 className="font-semibold mb-3">Distribuição Baixo (1-30) / Alto (31-60)</h4>
-                  <ResponsiveContainer width="100%" height={200}>
+                  <div className="h-32 sm:h-40 lg:h-48">
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={[
@@ -1445,7 +1471,7 @@ const App = () => {
                         cy="50%"
                         labelLine={false}
                         label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
-                        outerRadius={80}
+                        outerRadius={"70%"}
                         fill="#8884d8"
                         dataKey="value"
                       >
@@ -1455,6 +1481,7 @@ const App = () => {
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
+                  </div>
                 </div>
 
                 {/* Estatísticas Adicionais */}
@@ -1500,14 +1527,14 @@ const App = () => {
               <h3 className="text-xl font-bold mb-4">Pares Mais Frequentes</h3>
               <p className="text-gray-600 mb-4">Duplas de números que mais aparecem juntas</p>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {frequentPairs.map((item, index) => (
                   <div
                     key={item.pair}
                     className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-200 hover:shadow-md transition-shadow"
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-bold text-purple-700 text-lg">{item.pair}</span>
+                      <span className="font-bold text-purple-700 text-base sm:text-lg">{item.pair}</span>
                       <div className="text-right">
                         <span className="text-sm bg-purple-100 px-2 py-1 rounded text-purple-600 block">
                           {item.count}x
@@ -1528,7 +1555,8 @@ const App = () => {
               <h3 className="text-xl font-bold mb-4">Distribuição por Décadas</h3>
               <p className="text-gray-600 mb-4">Frequência de números por faixa</p>
               
-              <ResponsiveContainer width="100%" height={400}>
+              <div className="h-64 sm:h-80 lg:h-96">
+              <ResponsiveContainer width="100%" height="100%">
                 <BarChart 
                   data={Object.entries(patternAnalysis.distribuicaoDecadas).map(([decade, count]) => ({
                     decade,
@@ -1556,6 +1584,7 @@ const App = () => {
                   <Bar dataKey="count" fill="#8b5cf6" />
                 </BarChart>
               </ResponsiveContainer>
+              </div>
             </div>
           )}
 
@@ -1667,7 +1696,8 @@ const App = () => {
               {/* Gráfico de Estados */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <h4 className="font-semibold text-gray-700 mb-3">📊 Distribuição de Sorteios por Estado</h4>
-                <ResponsiveContainer width="100%" height={300}>
+                <div className="h-64 sm:h-72 lg:h-80">
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart 
                     data={Object.entries(geographicAnalysis.states)
                       .map(([state, data]) => ({
@@ -1699,6 +1729,7 @@ const App = () => {
                     <Bar dataKey="count" fill="#10b981" />
                   </BarChart>
                 </ResponsiveContainer>
+                </div>
               </div>
             </div>
           )}
@@ -1752,56 +1783,60 @@ const App = () => {
         </div>
 
             {/* Últimos Resultados */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold mb-4">Últimos 15 Resultados Oficiais</h3>
+            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
+              <h3 className="text-lg sm:text-xl font-bold mb-4">Últimos 15 Resultados Oficiais</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-xs sm:text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50">
-                      <th className="text-left py-2 px-2">Concurso</th>
-                      <th className="text-left py-2 px-2">Data</th>
-                      <th className="text-left py-2 px-2">Números Sorteados</th>
-                      <th className="text-left py-2 px-2">Ganhadores</th>
-                      <th className="text-left py-2 px-2">Prêmio</th>
+                      <th className="text-left py-2 px-1 sm:px-2">Concurso</th>
+                      <th className="text-left py-2 px-1 sm:px-2 hidden sm:table-cell">Data</th>
+                      <th className="text-left py-2 px-1 sm:px-2">Números</th>
+                      <th className="text-left py-2 px-1 sm:px-2">Ganhadores</th>
+                      <th className="text-left py-2 px-1 sm:px-2 hidden lg:table-cell">Prêmio</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredDraws.slice(0, 15).map((draw, index) => (
                       <tr key={draw.concurso} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} ${draw.isMegaDaVirada ? 'ring-2 ring-yellow-400 bg-yellow-50' : ''}`}>
-                        <td className="py-2 px-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold">#{draw.concurso}</span>
+                        <td className="py-2 px-1 sm:px-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1">
+                            <span className="font-bold text-xs sm:text-sm">#{draw.concurso}</span>
+                            <span className="text-xs text-gray-500 sm:hidden">{draw.data}</span>
                             {draw.isMegaDaVirada && (
-                              <span className="bg-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                              <span className="bg-yellow-500 text-white px-1 py-0.5 rounded text-xs font-bold">
                                 VIRADA
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-2 px-2">{draw.data}</td>
+                        <td className="py-2 px-1 sm:px-2 hidden sm:table-cell text-xs sm:text-sm">{draw.data}</td>
                         <td className="py-2 px-2">
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap">
                             {draw.dezenas.map(num => (
                               <span
                                 key={num}
-                                className="inline-block w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white text-center leading-8 font-bold text-sm shadow-sm"
+                                className="inline-block w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white text-center leading-6 sm:leading-8 font-bold text-xs sm:text-sm shadow-sm flex-shrink-0"
                               >
                                 {String(num).padStart(2, '0')}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td className="py-2 px-2">
+                        <td className="py-2 px-1 sm:px-2">
                           {draw.ganhadores6 > 0 ? (
-                            <span className="text-green-600 font-bold">{draw.ganhadores6} 🏆</span>
+                            <span className="text-green-600 font-bold text-xs sm:text-sm">
+                              <span className="sm:hidden">{draw.ganhadores6}</span>
+                              <span className="hidden sm:inline">{draw.ganhadores6} 🏆</span>
+                            </span>
                           ) : (
-                            <span className="text-orange-500 font-semibold">ACUMULOU</span>
+                            <span className="text-orange-500 font-semibold text-xs sm:text-sm">ACUM.</span>
                           )}
                         </td>
-                        <td className="py-2 px-2 font-semibold">
+                        <td className="py-2 px-1 sm:px-2 font-semibold text-xs sm:text-sm hidden lg:table-cell">
                           {draw.ganhadores6 > 0 
                             ? `R$ ${(draw.premioSena || 0).toLocaleString('pt-BR')}`
-                            : `Acumulado: R$ ${(draw.valorAcumulado || 0).toLocaleString('pt-BR')}`
+                            : `R$ ${(draw.valorAcumulado || 0).toLocaleString('pt-BR')}`
                           }
                         </td>
                       </tr>
