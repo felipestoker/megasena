@@ -9,7 +9,7 @@ const App = () => {
   const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
   const [error, setError] = useState(null);
   const [selectedPeriod, setSelectedPeriod] = useState('last100');
-  const [activeTab, setActiveTab] = useState('frequency');
+  const [activeTab, setActiveTab] = useState('suggestions');
   const [currentView, setCurrentView] = useState('analysis'); // 'analysis', 'calendar', 'draw-details'
   const [selectedDraw, setSelectedDraw] = useState(null);
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -20,8 +20,60 @@ const App = () => {
   });
   const [locationFilter, setLocationFilter] = useState('');
   const [stateFilter, setStateFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+  const [prizeTierFilter, setPrizeTierFilter] = useState('');
   const [loadMode, setLoadMode] = useState('quick'); // 'quick' ou 'full'
   const [isFullDataLoaded, setIsFullDataLoaded] = useState(false);
+  
+  // Estados para sugestões de números
+  const [suggestionType, setSuggestionType] = useState('balanced'); // 'frequent', 'rare', 'balanced', 'hot', 'cold', 'high', 'low'
+  const [generatedNumbers, setGeneratedNumbers] = useState([]);
+  const [suggestionFilters, setSuggestionFilters] = useState({
+    avoidRecent: false,
+    avoidConsecutive: false,
+    preferPairs: false,
+    mixHighLow: true
+  });
+
+  // Função para gerar dados de exemplo para teste
+  const generateSampleDraws = () => {
+    const sampleDraws = [];
+    for (let i = 0; i < 100; i++) {
+      const concurso = 2800 - i;
+      const date = new Date();
+      date.setDate(date.getDate() - i * 3);
+      
+      // Gerar 6 números aleatórios únicos
+      const dezenas = [];
+      while (dezenas.length < 6) {
+        const num = Math.floor(Math.random() * 60) + 1;
+        if (!dezenas.includes(num)) {
+          dezenas.push(num);
+        }
+      }
+      dezenas.sort((a, b) => a - b);
+      
+      sampleDraws.push({
+        concurso,
+        data: date.toLocaleDateString('pt-BR'),
+        dezenas,
+        premiacaoTotal: Math.floor(Math.random() * 100000000),
+        valorArrecadado: Math.floor(Math.random() * 200000000),
+        ganhadores6: Math.random() > 0.8 ? Math.floor(Math.random() * 5) : 0,
+        ganhadores5: Math.floor(Math.random() * 100),
+        ganhadores4: Math.floor(Math.random() * 5000),
+        acumulado: Math.random() > 0.8,
+        valorAcumulado: Math.floor(Math.random() * 50000000),
+        proximoConcurso: concurso + 1,
+        dataProximoConcurso: new Date(date.getTime() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        localSorteio: 'Caminhão da Sorte',
+        cidadeSorteio: ['São Paulo, SP', 'Rio de Janeiro, RJ', 'Belo Horizonte, MG', 'Salvador, BA'][Math.floor(Math.random() * 4)],
+        municipiosGanhadores: [],
+        isMegaDaVirada: concurso === 2800 - i && new Date().getMonth() === 11
+      });
+    }
+    return sampleDraws;
+  };
 
   // Função para buscar dados REAIS da API da Caixa
   const fetchDraws = useCallback(async (mode = 'quick') => {
@@ -32,8 +84,15 @@ const App = () => {
     try {
       // Primeiro, buscar o último concurso para saber o número atual
       console.log('Buscando último concurso...');
-      const latestResponse = await fetch('https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena');
-      const latestData = await latestResponse.json();
+      // Usar uma API que bypassa CORS
+      const latestResponse = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena'));
+      
+      if (!latestResponse.ok) {
+        throw new Error(`HTTP error! status: ${latestResponse.status}`);
+      }
+      
+      const latestResponseData = await latestResponse.json();
+      const latestData = JSON.parse(latestResponseData.contents);
       const latestNumber = latestData.numero;
       
       console.log(`Último concurso: ${latestNumber}`);
@@ -67,8 +126,12 @@ const App = () => {
         // Criar promises para buscar em paralelo
         for (let j = i; j <= endBatch; j++) {
           batch.push(
-            fetch(`https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/${j}`)
-              .then(res => res.json())
+            fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(`https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/${j}`))
+              .then(res => {
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                return res.json();
+              })
+              .then(data => JSON.parse(data.contents))
               .catch(err => {
                 console.error(`Erro ao buscar concurso ${j}:`, err);
                 return null;
@@ -164,7 +227,13 @@ const App = () => {
         if (mode === 'full') setIsFullDataLoaded(true);
         setError('Usando dados do cache. Clique em "Atualizar" para buscar dados mais recentes.');
       } else {
-        setError('Erro ao carregar dados. Por favor, verifique sua conexão e tente novamente.');
+        // Fallback: usar dados de exemplo se não há cache
+        console.log('Usando dados de exemplo devido ao erro da API...');
+        const sampleDraws = generateSampleDraws();
+        setDraws(sampleDraws);
+        setIsFullDataLoaded(true);
+        setLoadMode('full');
+        setError('Usando dados de exemplo. A API da Caixa pode estar temporariamente indisponível.');
       }
     } finally {
       setLoading(false);
@@ -177,7 +246,7 @@ const App = () => {
     await fetchDraws('full');
   }, [fetchDraws]);
 
-  // Buscar dados ao carregar a página
+  // Carregar dados automaticamente ao iniciar
   useEffect(() => {
     // Primeiro, verificar se há dados completos em cache
     const cachedFullData = localStorage.getItem('megasena_data_full');
@@ -185,38 +254,66 @@ const App = () => {
     
     if (cachedFullData && fullCacheDate) {
       const cacheAge = Date.now() - new Date(fullCacheDate).getTime();
-      const sixHours = 6 * 60 * 60 * 1000;
+      const twentyFourHours = 24 * 60 * 60 * 1000; // Cache por 24h
       
-      if (cacheAge < sixHours) {
+      if (cacheAge < twentyFourHours) {
         console.log(`Usando dados completos do cache (${JSON.parse(cachedFullData).length} concursos)`);
         setDraws(JSON.parse(cachedFullData));
         setIsFullDataLoaded(true);
         setLoadMode('full');
+        
+        // Verificar se precisa atualizar em background
+        const sixHours = 6 * 60 * 60 * 1000;
+        if (cacheAge > sixHours) {
+          console.log('Atualizando dados em background...');
+          fetchDraws('full').then(() => {
+            console.log('Dados atualizados em background');
+          });
+        }
         return;
       }
     }
     
-    // Caso contrário, verificar cache rápido
+    // Caso contrário, verificar cache rápido para carregar imediatamente
     const cachedQuickData = localStorage.getItem('megasena_data_quick');
     const quickCacheDate = localStorage.getItem('megasena_data_quick_date');
     
     if (cachedQuickData && quickCacheDate) {
       const cacheAge = Date.now() - new Date(quickCacheDate).getTime();
-      const oneHour = 60 * 60 * 1000; // 1 hora de cache para dados rápidos
+      const twoHours = 2 * 60 * 60 * 1000; // 2 horas para dados rápidos
       
-      if (cacheAge < oneHour) {
-        console.log(`Usando dados rápidos do cache (${JSON.parse(cachedQuickData).length} concursos)`);
+      if (cacheAge < twoHours) {
+        console.log(`Carregando dados rápidos do cache primeiro (${JSON.parse(cachedQuickData).length} concursos)`);
         setDraws(JSON.parse(cachedQuickData));
         setLoadMode('quick');
+        
+        // Carregar dados completos em background
+        console.log('Iniciando carregamento completo em background...');
+        setTimeout(() => {
+          fetchDraws('full').then(() => {
+            console.log('Dados completos carregados em background');
+          });
+        }, 1000);
         return;
       }
     }
     
-    // Se não há cache válido, buscar dados no modo rápido
-    fetchDraws('quick');
+    // Se não há cache válido, carregar tudo
+    console.log('Nenhum cache válido encontrado, carregando dados completos...');
+    fetchDraws('full');
   }, [fetchDraws]);
 
-  // Filtrar dados por período e localização
+  // Mapeamento de regiões do Brasil
+  const stateToRegion = {
+    'AC': 'Norte', 'AL': 'Nordeste', 'AP': 'Norte', 'AM': 'Norte', 'BA': 'Nordeste',
+    'CE': 'Nordeste', 'DF': 'Centro-Oeste', 'ES': 'Sudeste', 'GO': 'Centro-Oeste',
+    'MA': 'Nordeste', 'MT': 'Centro-Oeste', 'MS': 'Centro-Oeste', 'MG': 'Sudeste',
+    'PA': 'Norte', 'PB': 'Nordeste', 'PR': 'Sul', 'PE': 'Nordeste', 'PI': 'Nordeste',
+    'RJ': 'Sudeste', 'RN': 'Nordeste', 'RS': 'Sul', 'RO': 'Norte', 'RR': 'Norte',
+    'SC': 'Sul', 'SP': 'Sudeste', 'SE': 'Nordeste', 'TO': 'Norte'
+  };
+
+  // Filtrar dados por período e localização avançada
   const filteredDraws = useMemo(() => {
     if (!draws.length) return [];
     
@@ -252,7 +349,7 @@ const App = () => {
       );
     }
     
-    // Filtrar por estado
+    // Filtrar por estado específico
     if (stateFilter) {
       filtered = filtered.filter(draw => 
         draw.cidadeSorteio && 
@@ -260,8 +357,174 @@ const App = () => {
       );
     }
     
+    // Filtrar por região
+    if (regionFilter) {
+      filtered = filtered.filter(draw => {
+        if (!draw.cidadeSorteio) return false;
+        const stateMatch = draw.cidadeSorteio.match(/,\s*([A-Z]{2})$/);
+        if (!stateMatch) return false;
+        const state = stateMatch[1];
+        return stateToRegion[state] === regionFilter;
+      });
+    }
+    
+    // Filtrar por faixa de premiação (sorteios com ganhadores em determinada faixa)
+    if (prizeTierFilter) {
+      filtered = filtered.filter(draw => {
+        switch (prizeTierFilter) {
+          case 'sena':
+            return draw.ganhadores6 > 0;
+          case 'quina':
+            return draw.ganhadores5 > 0;
+          case 'quadra':
+            return draw.ganhadores4 > 0;
+          case 'acumulado':
+            return draw.acumulado;
+          case 'megaVirada':
+            return draw.isMegaDaVirada;
+          default:
+            return true;
+        }
+      });
+    }
+    
     return filtered;
-  }, [draws, selectedPeriod, locationFilter, stateFilter]);
+  }, [draws, selectedPeriod, locationFilter, stateFilter, regionFilter, prizeTierFilter]);
+
+  // Função para gerar sugestões de números
+  const generateNumberSuggestions = useCallback(() => {
+    if (!filteredDraws.length) return;
+
+    const allNumbers = Array.from({ length: 60 }, (_, i) => i + 1);
+    let suggestedNumbers = [];
+    
+    // Calcular frequência dos números
+    const frequency = {};
+    filteredDraws.forEach(draw => {
+      draw.dezenas.forEach(num => {
+        frequency[num] = (frequency[num] || 0) + 1;
+      });
+    });
+
+    // Calcular atraso dos números
+    const delays = {};
+    allNumbers.forEach(num => {
+      const lastDrawIndex = filteredDraws.findIndex(draw => draw.dezenas.includes(num));
+      delays[num] = lastDrawIndex === -1 ? filteredDraws.length : lastDrawIndex;
+    });
+
+    // Números dos últimos 3 sorteios (para evitar se solicitado)
+    const recentNumbers = new Set();
+    if (suggestionFilters.avoidRecent) {
+      filteredDraws.slice(0, 3).forEach(draw => {
+        draw.dezenas.forEach(num => recentNumbers.add(num));
+      });
+    }
+
+    // Aplicar estratégia baseada no tipo de sugestão
+    let candidateNumbers = [];
+    
+    switch (suggestionType) {
+      case 'frequent':
+        // Números mais sorteados
+        candidateNumbers = Object.entries(frequency)
+          .sort(([,a], [,b]) => b - a)
+          .map(([num]) => parseInt(num))
+          .filter(num => !suggestionFilters.avoidRecent || !recentNumbers.has(num))
+          .slice(0, 20);
+        break;
+        
+      case 'rare':
+        // Números menos sorteados
+        candidateNumbers = Object.entries(frequency)
+          .sort(([,a], [,b]) => a - b)
+          .map(([num]) => parseInt(num))
+          .filter(num => !suggestionFilters.avoidRecent || !recentNumbers.has(num))
+          .slice(0, 20);
+        break;
+        
+      case 'hot':
+        // Números que saíram recentemente (últimos 10 sorteios)
+        const hotNumbers = new Set();
+        filteredDraws.slice(0, 10).forEach(draw => {
+          draw.dezenas.forEach(num => hotNumbers.add(num));
+        });
+        candidateNumbers = Array.from(hotNumbers)
+          .filter(num => !suggestionFilters.avoidRecent || !recentNumbers.has(num));
+        break;
+        
+      case 'cold':
+        // Números atrasados (não saem há muito tempo)
+        candidateNumbers = Object.entries(delays)
+          .sort(([,a], [,b]) => b - a)
+          .map(([num]) => parseInt(num))
+          .filter(num => !suggestionFilters.avoidRecent || !recentNumbers.has(num))
+          .slice(0, 20);
+        break;
+        
+      case 'high':
+        // Números altos (31-60)
+        candidateNumbers = allNumbers.filter(num => num >= 31)
+          .filter(num => !suggestionFilters.avoidRecent || !recentNumbers.has(num));
+        break;
+        
+      case 'low':
+        // Números baixos (1-30)
+        candidateNumbers = allNumbers.filter(num => num <= 30)
+          .filter(num => !suggestionFilters.avoidRecent || !recentNumbers.has(num));
+        break;
+        
+      default: // 'balanced'
+        // Mistura equilibrada
+        const frequentNums = Object.entries(frequency)
+          .sort(([,a], [,b]) => b - a)
+          .map(([num]) => parseInt(num))
+          .slice(0, 15);
+        const rareNums = Object.entries(frequency)
+          .sort(([,a], [,b]) => a - b)
+          .map(([num]) => parseInt(num))
+          .slice(0, 15);
+        candidateNumbers = [...frequentNums, ...rareNums]
+          .filter(num => !suggestionFilters.avoidRecent || !recentNumbers.has(num));
+    }
+
+    // Aplicar filtros adicionais
+    if (suggestionFilters.mixHighLow) {
+      // Garantir mix de números altos e baixos
+      const lowNums = candidateNumbers.filter(num => num <= 30);
+      const highNums = candidateNumbers.filter(num => num > 30);
+      candidateNumbers = [...lowNums.slice(0, 3), ...highNums.slice(0, 3)];
+    }
+
+    // Shuffle e selecionar 6 números únicos
+    const shuffled = [...candidateNumbers].sort(() => Math.random() - 0.5);
+    suggestedNumbers = [];
+    
+    while (suggestedNumbers.length < 6 && shuffled.length > 0) {
+      const num = shuffled.pop();
+      
+      // Verificar consecutivos se filtro ativo
+      if (suggestionFilters.avoidConsecutive) {
+        const hasConsecutive = suggestedNumbers.some(existing => 
+          Math.abs(existing - num) === 1
+        );
+        if (hasConsecutive) continue;
+      }
+      
+      suggestedNumbers.push(num);
+    }
+
+    // Se não conseguiu 6 números, completar com números aleatórios
+    while (suggestedNumbers.length < 6) {
+      const randomNum = Math.floor(Math.random() * 60) + 1;
+      if (!suggestedNumbers.includes(randomNum) && 
+          (!suggestionFilters.avoidRecent || !recentNumbers.has(randomNum))) {
+        suggestedNumbers.push(randomNum);
+      }
+    }
+
+    setGeneratedNumbers(suggestedNumbers.sort((a, b) => a - b));
+  }, [filteredDraws, suggestionType, suggestionFilters]);
 
   // Análise de frequência de números
   const numberFrequency = useMemo(() => {
@@ -518,9 +781,9 @@ const App = () => {
     <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6 border-l-4" style={{ borderColor: color }}>
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-xs sm:text-sm text-gray-600 mb-1 truncate">{title}</p>
-          <p className="text-lg sm:text-xl lg:text-2xl font-bold truncate" title={value}>{value}</p>
-          {subtitle && <p className="text-xs text-gray-500 mt-1 truncate" title={subtitle}>{subtitle}</p>}
+          <p className="text-xs sm:text-sm text-gray-600 mb-1 break-words">{title}</p>
+          <p className="text-lg sm:text-xl lg:text-2xl font-bold break-words" title={value}>{value}</p>
+          {subtitle && <p className="text-xs text-gray-500 mt-1 break-words" title={subtitle}>{subtitle}</p>}
         </div>
         <Icon className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 opacity-20 flex-shrink-0 ml-2" style={{ color }} />
       </div>
@@ -855,33 +1118,103 @@ const App = () => {
               </div>
             </div>
 
-            {/* Informações de Localização dos Ganhadores */}
+            {/* Informações Detalhadas de Localização dos Ganhadores */}
             {selectedDraw.municipiosGanhadores && selectedDraw.municipiosGanhadores.length > 0 && (
               <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-green-600" />
-                  Cidades dos Ganhadores
+                  Localização dos Ganhadores
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {selectedDraw.municipiosGanhadores.map((municipio, index) => (
-                    <div key={index} className="bg-green-50 rounded-lg p-4 border border-green-200">
-                      <div className="flex justify-between items-center">
-                        <span className="font-semibold text-green-800">
-                          {municipio.nomeMunicipioUF}
-                        </span>
-                        <span className="bg-green-600 text-white px-2 py-1 rounded-full text-sm">
-                          {municipio.serie || '1'} ganhador(es)
-                        </span>
+                <div className="space-y-4">
+                  <div className="text-sm text-gray-600 mb-3">
+                    <span className="font-medium">Total de cidades com ganhadores: </span>
+                    <span className="bg-blue-100 px-2 py-1 rounded-full text-blue-700 font-bold">
+                      {selectedDraw.municipiosGanhadores.length}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {selectedDraw.municipiosGanhadores.map((municipio, index) => (
+                      <div key={index} className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200 shadow-sm">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-green-800 text-sm mb-1">
+                            {municipio.nomeMunicipioUF}
+                          </span>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Ganhadores:</span>
+                            <span className="bg-green-600 text-white px-3 py-1 rounded-full text-xs font-bold">
+                              {municipio.serie || '1'}
+                            </span>
+                          </div>
+                          {municipio.posicao && (
+                            <div className="text-xs text-green-700 mt-1">
+                              Posição: {municipio.posicao}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Informações Adicionais */}
+            {/* Resumo Financeiro Detalhado */}
             <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4">Informações do Concurso</h3>
+              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-green-600" />
+                Resumo Financeiro Completo
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
+                  <div className="text-sm text-gray-600 mb-1">Valor Arrecadado</div>
+                  <div className="text-2xl font-bold text-green-700">
+                    R$ {(selectedDraw.valorArrecadado || 0).toLocaleString('pt-BR')}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Total de apostas do concurso
+                  </div>
+                </div>
+                
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
+                  <div className="text-sm text-gray-600 mb-1">Total Distribuído</div>
+                  <div className="text-2xl font-bold text-purple-700">
+                    R$ {((selectedDraw.premioTotalSena || 0) + (selectedDraw.premioQuina || 0) * (selectedDraw.ganhadores5 || 0) + (selectedDraw.premioQuadra || 0) * (selectedDraw.ganhadores4 || 0)).toLocaleString('pt-BR')}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Soma de todos os prêmios
+                  </div>
+                </div>
+                
+                {selectedDraw.acumulado ? (
+                  <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 border border-orange-200">
+                    <div className="text-sm text-gray-600 mb-1">Valor Acumulado</div>
+                    <div className="text-2xl font-bold text-orange-700">
+                      R$ {(selectedDraw.valorAcumulado || 0).toLocaleString('pt-BR')}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Para o próximo concurso
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+                    <div className="text-sm text-gray-600 mb-1">Status do Prêmio</div>
+                    <div className="text-2xl font-bold text-blue-700">
+                      PAGO
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Prêmio máximo distribuído
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Informações Completas do Concurso */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Info className="w-5 h-5 text-blue-600" />
+                Informações Detalhadas
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-3">
                   <div className="flex justify-between py-2 border-b border-gray-100">
@@ -890,24 +1223,22 @@ const App = () => {
                   </div>
                   {selectedDraw.cidadeSorteio && (
                     <div className="flex justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-600 font-medium">Cidade do Sorteio:</span>
+                      <span className="text-gray-600 font-medium">Local do Sorteio:</span>
                       <span className="font-bold text-blue-600">{selectedDraw.cidadeSorteio}</span>
                     </div>
                   )}
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-600 font-medium">Valor Arrecadado:</span>
-                    <span className="font-bold text-green-600">
-                      R$ {(selectedDraw.valorArrecadado || 0).toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-                  {selectedDraw.acumulado && (
+                  {selectedDraw.localSorteio && (
                     <div className="flex justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-600 font-medium">Valor Acumulado:</span>
-                      <span className="font-bold text-orange-600">
-                        R$ {(selectedDraw.valorAcumulado || 0).toLocaleString('pt-BR')}
-                      </span>
+                      <span className="text-gray-600 font-medium">Equipamento:</span>
+                      <span className="font-bold text-gray-700">{selectedDraw.localSorteio}</span>
                     </div>
                   )}
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-600 font-medium">Total de Ganhadores:</span>
+                    <span className="font-bold text-green-600">
+                      {(selectedDraw.ganhadores6 || 0) + (selectedDraw.ganhadores5 || 0) + (selectedDraw.ganhadores4 || 0)}
+                    </span>
+                  </div>
                 </div>
                 <div className="space-y-3">
                   {selectedDraw.proximoConcurso && (
@@ -927,9 +1258,17 @@ const App = () => {
                     <span className={`font-bold ${
                       selectedDraw.acumulado ? 'text-orange-600' : 'text-green-600'
                     }`}>
-                      {selectedDraw.acumulado ? 'Acumulou' : 'Teve ganhador'}
+                      {selectedDraw.acumulado ? 'Acumulou' : 'Teve ganhador na Sena'}
                     </span>
                   </div>
+                  {selectedDraw.municipiosGanhadores && selectedDraw.municipiosGanhadores.length > 0 && (
+                    <div className="flex justify-between py-2 border-b border-gray-100">
+                      <span className="text-gray-600 font-medium">Cidades Premiadas:</span>
+                      <span className="font-bold text-purple-600">
+                        {selectedDraw.municipiosGanhadores.length}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1140,20 +1479,22 @@ const App = () => {
                   </div>
                 </div>
                 
-                {/* Filtros Geográficos */}
-                <div className="space-y-3 pt-4 border-t border-gray-200">
+                {/* Filtros Geográficos e de Premiação */}
+                <div className="space-y-4 pt-4 border-t border-gray-200">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-5 h-5 text-gray-600" />
-                    <span className="font-semibold text-sm sm:text-base">Filtros Geográficos:</span>
+                    <span className="font-semibold text-sm sm:text-base">Filtros Avançados:</span>
                   </div>
-                  <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  
+                  {/* Filtros Geográficos */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">Cidade:</label>
                       <input
                         type="text"
                         value={locationFilter}
                         onChange={(e) => setLocationFilter(e.target.value)}
-                        placeholder="Ex: São Paulo..."
+                        placeholder="Ex: São Paulo, SP..."
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -1172,27 +1513,93 @@ const App = () => {
                         ))}
                       </select>
                     </div>
-                    {(locationFilter || stateFilter) && (
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">Região:</label>
+                      <select
+                        value={regionFilter}
+                        onChange={(e) => setRegionFilter(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Todas as regiões</option>
+                        <option value="Norte">Norte</option>
+                        <option value="Nordeste">Nordeste</option>
+                        <option value="Centro-Oeste">Centro-Oeste</option>
+                        <option value="Sudeste">Sudeste</option>
+                        <option value="Sul">Sul</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Filtros de Premiação */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">Tipo de Resultado:</label>
+                      <select
+                        value={prizeTierFilter}
+                        onChange={(e) => setPrizeTierFilter(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Todos os resultados</option>
+                        <option value="sena">Apenas com ganhador da Sena</option>
+                        <option value="quina">Apenas com ganhador da Quina</option>
+                        <option value="quadra">Apenas com ganhador da Quadra</option>
+                        <option value="acumulado">Apenas acumulados</option>
+                        <option value="megaVirada">Apenas Mega da Virada</option>
+                      </select>
+                    </div>
+                    
+                    {/* Botão de limpeza dos filtros */}
+                    {(locationFilter || stateFilter || regionFilter || prizeTierFilter) && (
                       <div className="flex items-end">
                         <button
                           onClick={() => {
                             setLocationFilter('');
                             setStateFilter('');
+                            setRegionFilter('');
+                            setPrizeTierFilter('');
                           }}
-                          className="w-full sm:w-auto px-4 py-2 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors"
+                          className="w-full px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600 transition-colors"
                         >
-                          Limpar Filtros
+                          Limpar Todos os Filtros
                         </button>
                       </div>
                     )}
                   </div>
                 </div>
                 
-                {/* Informações do Filtro Atual */}
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-gray-600">
-                  <span className="font-medium">Mostrando {filteredDraws.length} concursos</span>
-                  {locationFilter && <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">Cidade: "{locationFilter}"</span>}
-                  {stateFilter && <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">Estado: {stateFilter}</span>}
+                {/* Informações dos Filtros Atuais */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <span className="font-medium">Mostrando {filteredDraws.length} concursos</span>
+                    <span className="text-gray-400">|</span>
+                    <span>de {draws.length} total</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {locationFilter && (
+                      <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium">
+                        🏙️ Cidade: "{locationFilter}"
+                      </span>
+                    )}
+                    {stateFilter && (
+                      <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-medium">
+                        🗺️ Estado: {stateFilter}
+                      </span>
+                    )}
+                    {regionFilter && (
+                      <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-xs font-medium">
+                        🌎 Região: {regionFilter}
+                      </span>
+                    )}
+                    {prizeTierFilter && (
+                      <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-xs font-medium">
+                        🏆 {prizeTierFilter === 'sena' ? 'Ganhador da Sena' : 
+                             prizeTierFilter === 'quina' ? 'Ganhador da Quina' :
+                             prizeTierFilter === 'quadra' ? 'Ganhador da Quadra' :
+                             prizeTierFilter === 'acumulado' ? 'Acumulados' :
+                             prizeTierFilter === 'megaVirada' ? 'Mega da Virada' : prizeTierFilter}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1248,6 +1655,7 @@ const App = () => {
           <div className="mb-6">
             <div className="flex overflow-x-auto pb-2 gap-1 sm:gap-2 border-b">
               {[
+                { id: 'suggestions', label: '🎲 Sugestões', shortLabel: '🎲' },
                 { id: 'frequency', label: '📊 Frequência', shortLabel: '📊' },
                 { id: 'delays', label: '⏱️ Atrasos', shortLabel: '⏱️' },
                 { id: 'patterns', label: '🎯 Padrões', shortLabel: '🎯' },
@@ -1590,12 +1998,12 @@ const App = () => {
 
           {activeTab === 'geography' && (
             <div>
-              <h3 className="text-xl font-bold mb-4">Análise Geográfica dos Sorteios</h3>
+              <h3 className="text-xl font-bold mb-4">🗺️ Análise Geográfica Completa</h3>
               
-              {/* Estatísticas Gerais */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              {/* Estatísticas Gerais Expandidas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div className="bg-blue-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-700 mb-2">📍 Total de Locais</h4>
+                  <h4 className="font-semibold text-blue-700 mb-2">📍 Cidades</h4>
                   <div className="text-2xl font-bold text-blue-600">
                     {Object.keys(geographicAnalysis.cities).length}
                   </div>
@@ -1611,58 +2019,222 @@ const App = () => {
                 </div>
                 
                 <div className="bg-purple-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-purple-700 mb-2">📊 Com Localização</h4>
+                  <h4 className="font-semibold text-purple-700 mb-2">🎯 Total de Ganhadores</h4>
                   <div className="text-2xl font-bold text-purple-600">
-                    {geographicAnalysis.totalDrawsWithLocation}
+                    {filteredDraws.reduce((total, draw) => total + (draw.ganhadores6 || 0) + (draw.ganhadores5 || 0) + (draw.ganhadores4 || 0), 0)}
+                  </div>
+                  <div className="text-sm text-gray-600">Todas as faixas</div>
+                </div>
+
+                <div className="bg-orange-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-orange-700 mb-2">💰 Acumulações</h4>
+                  <div className="text-2xl font-bold text-orange-600">
+                    {filteredDraws.filter(draw => draw.acumulado).length}
                   </div>
                   <div className="text-sm text-gray-600">
-                    {((geographicAnalysis.totalDrawsWithLocation / draws.length) * 100).toFixed(1)}% do total
+                    {((filteredDraws.filter(draw => draw.acumulado).length / filteredDraws.length) * 100).toFixed(1)}% dos sorteios
                   </div>
                 </div>
               </div>
 
-              {/* Top Cidades */}
+              {/* Estatísticas de Ganhadores por Faixa */}
+              <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h4 className="text-lg font-bold text-gray-800 mb-4">🏆 Estatísticas de Ganhadores por Faixa</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="text-center bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 border border-yellow-200">
+                    <div className="text-3xl font-bold text-yellow-600 mb-2">
+                      {filteredDraws.reduce((total, draw) => total + (draw.ganhadores6 || 0), 0)}
+                    </div>
+                    <div className="text-sm font-medium text-yellow-800">Ganhadores da Sena</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      Em {filteredDraws.filter(draw => draw.ganhadores6 > 0).length} sorteios
+                    </div>
+                  </div>
+                  
+                  <div className="text-center bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+                    <div className="text-3xl font-bold text-blue-600 mb-2">
+                      {filteredDraws.reduce((total, draw) => total + (draw.ganhadores5 || 0), 0)}
+                    </div>
+                    <div className="text-sm font-medium text-blue-800">Ganhadores da Quina</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      Média de {(filteredDraws.reduce((total, draw) => total + (draw.ganhadores5 || 0), 0) / filteredDraws.length).toFixed(1)} por sorteio
+                    </div>
+                  </div>
+                  
+                  <div className="text-center bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
+                    <div className="text-3xl font-bold text-purple-600 mb-2">
+                      {filteredDraws.reduce((total, draw) => total + (draw.ganhadores4 || 0), 0)}
+                    </div>
+                    <div className="text-sm font-medium text-purple-800">Ganhadores da Quadra</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      Média de {(filteredDraws.reduce((total, draw) => total + (draw.ganhadores4 || 0), 0) / filteredDraws.length).toFixed(1)} por sorteio
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Análise Detalhada de Cidades */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-700 mb-3">🏆 Top 10 Cidades com Mais Sorteios</h4>
-                  <div className="space-y-2">
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    🏆 Top Cidades - Sorteios e Ganhadores
+                  </h4>
+                  <div className="space-y-3">
                     {Object.entries(geographicAnalysis.cities)
                       .sort((a, b) => b[1].count - a[1].count)
-                      .slice(0, 10)
+                      .slice(0, 8)
                       .map(([city, data], index) => (
-                        <div key={city} className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-gray-500 w-6">#{index + 1}</span>
-                            <span className="font-medium">{city}</span>
+                        <div key={city} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                                {index + 1}
+                              </span>
+                              <span className="font-semibold text-gray-800">{city}</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-blue-600">{data.count} sorteios</div>
+                              <div className="text-xs text-gray-500">{data.percentage}%</div>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <span className="font-bold text-blue-600">{data.count} sorteios</span>
-                            <div className="text-xs text-gray-500">{data.percentage}%</div>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="bg-yellow-100 rounded px-2 py-1">
+                              <div className="text-sm font-bold text-yellow-700">{data.totalWinners}</div>
+                              <div className="text-xs text-yellow-600">Ganhadores</div>
+                            </div>
+                            <div className="bg-red-100 rounded px-2 py-1">
+                              <div className="text-sm font-bold text-red-700">{data.totalAccumulated}</div>
+                              <div className="text-xs text-red-600">Acumulou</div>
+                            </div>
+                            <div className="bg-green-100 rounded px-2 py-1">
+                              <div className="text-sm font-bold text-green-700">
+                                {data.totalWinners > 0 ? ((data.totalWinners / data.count) * 100).toFixed(0) : 0}%
+                              </div>
+                              <div className="text-xs text-green-600">Taxa Ganho</div>
+                            </div>
                           </div>
                         </div>
                       ))}
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-700 mb-3">🏛️ Estatísticas por Estado</h4>
-                  <div className="space-y-2">
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    🏛️ Análise por Estado e Região
+                  </h4>
+                  <div className="space-y-3">
                     {Object.entries(geographicAnalysis.states)
                       .sort((a, b) => b[1].count - a[1].count)
-                      .slice(0, 10)
-                      .map(([state, data]) => (
-                        <div key={state} className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-green-600 w-8">{state}</span>
-                            <span className="text-sm text-gray-600">{data.cities.length} cidades</span>
+                      .slice(0, 8)
+                      .map(([state, data]) => {
+                        const region = stateToRegion[state] || 'N/A';
+                        const regionColor = {
+                          'Norte': 'bg-green-100 text-green-800',
+                          'Nordeste': 'bg-yellow-100 text-yellow-800',
+                          'Centro-Oeste': 'bg-orange-100 text-orange-800',
+                          'Sudeste': 'bg-blue-100 text-blue-800',
+                          'Sul': 'bg-purple-100 text-purple-800'
+                        }[region] || 'bg-gray-100 text-gray-800';
+                        
+                        return (
+                          <div key={state} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-800 text-lg w-10">{state}</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${regionColor}`}>
+                                  {region}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-bold text-green-600">{data.count} sorteios</div>
+                                <div className="text-xs text-gray-500">{data.percentage}%</div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                              <div className="bg-blue-100 rounded px-2 py-1">
+                                <div className="text-sm font-bold text-blue-700">{data.cities.size || data.cities.length}</div>
+                                <div className="text-xs text-blue-600">Cidades</div>
+                              </div>
+                              <div className="bg-yellow-100 rounded px-2 py-1">
+                                <div className="text-sm font-bold text-yellow-700">{data.totalWinners}</div>
+                                <div className="text-xs text-yellow-600">Ganhadores</div>
+                              </div>
+                              <div className="bg-red-100 rounded px-2 py-1">
+                                <div className="text-sm font-bold text-red-700">{data.totalAccumulated}</div>
+                                <div className="text-xs text-red-600">Acumulados</div>
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <span className="font-bold text-green-600">{data.count} sorteios</span>
-                            <div className="text-xs text-gray-500">{data.percentage}%</div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Análise por Regiões Brasileiras */}
+              <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  🌎 Distribuição por Regiões do Brasil
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  {Object.entries(['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'].reduce((acc, region) => {
+                    acc[region] = {
+                      states: 0,
+                      cities: 0,
+                      draws: 0,
+                      winners: 0,
+                      accumulated: 0
+                    };
+                    
+                    Object.entries(geographicAnalysis.states).forEach(([state, data]) => {
+                      if (stateToRegion[state] === region) {
+                        acc[region].states++;
+                        acc[region].cities += data.cities.size || data.cities.length;
+                        acc[region].draws += data.count;
+                        acc[region].winners += data.totalWinners;
+                        acc[region].accumulated += data.totalAccumulated;
+                      }
+                    });
+                    
+                    return acc;
+                  }, {})).map(([region, data]) => {
+                    const colors = {
+                      'Norte': 'from-green-400 to-green-600',
+                      'Nordeste': 'from-yellow-400 to-yellow-600',
+                      'Centro-Oeste': 'from-orange-400 to-orange-600',
+                      'Sudeste': 'from-blue-400 to-blue-600',
+                      'Sul': 'from-purple-400 to-purple-600'
+                    };
+                    
+                    return (
+                      <div key={region} className={`bg-gradient-to-br ${colors[region]} text-white rounded-lg p-4`}>
+                        <h5 className="font-bold text-lg mb-3">{region}</h5>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-sm opacity-90">Estados:</span>
+                            <span className="font-bold">{data.states}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm opacity-90">Cidades:</span>
+                            <span className="font-bold">{data.cities}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm opacity-90">Sorteios:</span>
+                            <span className="font-bold">{data.draws}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm opacity-90">Ganhadores:</span>
+                            <span className="font-bold">{data.winners}</span>
+                          </div>
+                          <div className="bg-black bg-opacity-20 rounded px-2 py-1 mt-2">
+                            <div className="text-center text-sm">
+                              Taxa: {data.draws > 0 ? ((data.winners / data.draws) * 100).toFixed(1) : 0}%
+                            </div>
                           </div>
                         </div>
-                      ))}
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1733,6 +2305,190 @@ const App = () => {
               </div>
             </div>
           )}
+
+          {activeTab === 'suggestions' && (
+            <div>
+              <h3 className="text-xl font-bold mb-4">🎲 Sugestões de Números para Jogar</h3>
+              <p className="text-gray-600 mb-6">
+                Gere combinações de números baseadas em diferentes estratégias de análise dos sorteios anteriores.
+              </p>
+
+              {/* Controles de Sugestão */}
+              <div className="bg-gray-50 rounded-lg p-6 mb-6">
+                <h4 className="font-semibold mb-4">Configurar Estratégia de Sugestão</h4>
+                
+                {/* Tipo de Estratégia */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Estratégia Principal:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { value: 'balanced', label: '⚖️ Equilibrada', desc: 'Mix de números frequentes e raros' },
+                      { value: 'frequent', label: '🔥 Frequentes', desc: 'Números que mais saem' },
+                      { value: 'rare', label: '💎 Raros', desc: 'Números que menos saem' },
+                      { value: 'hot', label: '🌡️ Quentes', desc: 'Saíram recentemente' },
+                      { value: 'cold', label: '❄️ Frios', desc: 'Não saem há tempo' },
+                      { value: 'high', label: '⬆️ Altos', desc: 'Números 31-60' },
+                      { value: 'low', label: '⬇️ Baixos', desc: 'Números 1-30' }
+                    ].map(strategy => (
+                      <button
+                        key={strategy.value}
+                        onClick={() => setSuggestionType(strategy.value)}
+                        className={`p-3 rounded-lg border-2 transition-all ${
+                          suggestionType === strategy.value
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
+                        title={strategy.desc}
+                      >
+                        <div className="text-sm font-medium">{strategy.label}</div>
+                        <div className="text-xs text-gray-500 mt-1">{strategy.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Filtros Adicionais */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Filtros Adicionais:
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={suggestionFilters.avoidRecent}
+                        onChange={(e) => setSuggestionFilters(prev => ({
+                          ...prev,
+                          avoidRecent: e.target.checked
+                        }))}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">Evitar números dos últimos 3 sorteios</span>
+                    </label>
+                    
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={suggestionFilters.avoidConsecutive}
+                        onChange={(e) => setSuggestionFilters(prev => ({
+                          ...prev,
+                          avoidConsecutive: e.target.checked
+                        }))}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">Evitar números consecutivos</span>
+                    </label>
+                    
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={suggestionFilters.mixHighLow}
+                        onChange={(e) => setSuggestionFilters(prev => ({
+                          ...prev,
+                          mixHighLow: e.target.checked
+                        }))}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">Misturar números altos e baixos</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Botão Gerar */}
+                <button
+                  onClick={generateNumberSuggestions}
+                  disabled={!filteredDraws.length}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className="w-5 h-5" />
+                  Gerar Nova Sugestão
+                </button>
+              </div>
+
+              {/* Números Sugeridos */}
+              {generatedNumbers.length > 0 && (
+                <div className="bg-white border-2 border-blue-200 rounded-lg p-6 mb-6">
+                  <h4 className="font-semibold text-blue-700 mb-4 flex items-center gap-2">
+                    <Star className="w-5 h-5" />
+                    Sua Sugestão de Números
+                  </h4>
+                  
+                  <div className="flex justify-center gap-3 mb-4">
+                    {generatedNumbers.map(num => (
+                      <div
+                        key={num}
+                        className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow-lg"
+                      >
+                        {String(num).padStart(2, '0')}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="text-center text-sm text-gray-600">
+                    <p className="mb-2">
+                      <strong>Estratégia:</strong> {
+                        {
+                          'balanced': 'Equilibrada (mix de frequentes e raros)',
+                          'frequent': 'Números mais frequentes',
+                          'rare': 'Números mais raros',
+                          'hot': 'Números "quentes" (saíram recentemente)',
+                          'cold': 'Números "frios" (atrasados)',
+                          'high': 'Números altos (31-60)',
+                          'low': 'Números baixos (1-30)'
+                        }[suggestionType]
+                      }
+                    </p>
+                    <p className="text-xs">
+                      ⚠️ Esta é apenas uma sugestão baseada em análise estatística. 
+                      A Mega-Sena é um jogo de sorte e todos os números têm a mesma probabilidade.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Histórico de Análise */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">📊 Estatísticas dos Números Sugeridos</h4>
+                  {generatedNumbers.length > 0 ? (
+                    <div className="space-y-2">
+                      {generatedNumbers.map(num => {
+                        const frequency = filteredDraws.reduce((count, draw) => 
+                          count + (draw.dezenas.includes(num) ? 1 : 0), 0
+                        );
+                        const lastDraw = filteredDraws.findIndex(draw => draw.dezenas.includes(num));
+                        
+                        return (
+                          <div key={num} className="flex justify-between items-center text-sm">
+                            <span className="font-medium">{String(num).padStart(2, '0')}</span>
+                            <div className="text-gray-600">
+                              {frequency}x sorteado, há {lastDraw === -1 ? '∞' : lastDraw} concursos
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">Gere uma sugestão para ver as estatísticas</p>
+                  )}
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">💡 Dicas de Estratégia</h4>
+                  <div className="space-y-2 text-sm text-gray-600">
+                    <p>• <strong>Equilibrada:</strong> Combina diferentes abordagens</p>
+                    <p>• <strong>Frequentes:</strong> Números que saem com mais regularidade</p>
+                    <p>• <strong>Raros:</strong> Números "em dívida" com menos aparições</p>
+                    <p>• <strong>Quentes:</strong> Tendência de repetir números recentes</p>
+                    <p>• <strong>Frios:</strong> Números que não saem há muito tempo</p>
+                    <p>• <strong>Altos/Baixos:</strong> Estratégia de posicionamento</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Seção de Insights */}
@@ -1786,54 +2542,54 @@ const App = () => {
             <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
               <h3 className="text-lg sm:text-xl font-bold mb-4">Últimos 15 Resultados Oficiais</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs sm:text-sm">
+                <table className="w-full text-xs sm:text-sm min-w-[800px]">
                   <thead>
                     <tr className="border-b bg-gray-50">
-                      <th className="text-left py-2 px-1 sm:px-2">Concurso</th>
-                      <th className="text-left py-2 px-1 sm:px-2 hidden sm:table-cell">Data</th>
-                      <th className="text-left py-2 px-1 sm:px-2">Números</th>
-                      <th className="text-left py-2 px-1 sm:px-2">Ganhadores</th>
-                      <th className="text-left py-2 px-1 sm:px-2 hidden lg:table-cell">Prêmio</th>
+                      <th className="text-left py-3 px-3 min-w-[100px]">Concurso</th>
+                      <th className="text-left py-3 px-3 min-w-[100px] hidden sm:table-cell">Data</th>
+                      <th className="text-left py-3 px-3 min-w-[250px]">Números</th>
+                      <th className="text-left py-3 px-3 min-w-[120px]">Ganhadores</th>
+                      <th className="text-left py-3 px-3 min-w-[150px] hidden lg:table-cell">Prêmio</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredDraws.slice(0, 15).map((draw, index) => (
                       <tr key={draw.concurso} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} ${draw.isMegaDaVirada ? 'ring-2 ring-yellow-400 bg-yellow-50' : ''}`}>
-                        <td className="py-2 px-1 sm:px-2">
+                        <td className="py-3 px-3">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-1">
-                            <span className="font-bold text-xs sm:text-sm">#{draw.concurso}</span>
+                            <span className="font-bold text-sm">#{draw.concurso}</span>
                             <span className="text-xs text-gray-500 sm:hidden">{draw.data}</span>
                             {draw.isMegaDaVirada && (
-                              <span className="bg-yellow-500 text-white px-1 py-0.5 rounded text-xs font-bold">
+                              <span className="bg-yellow-500 text-white px-2 py-1 rounded text-xs font-bold">
                                 VIRADA
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-2 px-1 sm:px-2 hidden sm:table-cell text-xs sm:text-sm">{draw.data}</td>
-                        <td className="py-2 px-2">
-                          <div className="flex gap-1 flex-wrap">
+                        <td className="py-3 px-3 hidden sm:table-cell text-sm">{draw.data}</td>
+                        <td className="py-3 px-3">
+                          <div className="flex gap-2 flex-wrap">
                             {draw.dezenas.map(num => (
                               <span
                                 key={num}
-                                className="inline-block w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white text-center leading-6 sm:leading-8 font-bold text-xs sm:text-sm shadow-sm flex-shrink-0"
+                                className="inline-block w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white text-center leading-8 font-bold text-sm shadow-sm flex-shrink-0"
                               >
                                 {String(num).padStart(2, '0')}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td className="py-2 px-1 sm:px-2">
+                        <td className="py-3 px-3">
                           {draw.ganhadores6 > 0 ? (
-                            <span className="text-green-600 font-bold text-xs sm:text-sm">
+                            <span className="text-green-600 font-bold text-sm">
                               <span className="sm:hidden">{draw.ganhadores6}</span>
                               <span className="hidden sm:inline">{draw.ganhadores6} 🏆</span>
                             </span>
                           ) : (
-                            <span className="text-orange-500 font-semibold text-xs sm:text-sm">ACUM.</span>
+                            <span className="text-orange-500 font-semibold text-sm">ACUM.</span>
                           )}
                         </td>
-                        <td className="py-2 px-1 sm:px-2 font-semibold text-xs sm:text-sm hidden lg:table-cell">
+                        <td className="py-3 px-3 font-semibold text-sm hidden lg:table-cell">
                           {draw.ganhadores6 > 0 
                             ? `R$ ${(draw.premioSena || 0).toLocaleString('pt-BR')}`
                             : `R$ ${(draw.valorAcumulado || 0).toLocaleString('pt-BR')}`

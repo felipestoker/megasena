@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(npm run dev:*)",
-      "WebFetch(domain:servicebus2.caixa.gov.br)"
+      "WebFetch(domain:servicebus2.caixa.gov.br)",
+      "Bash(npm run build:*)",
+      "Bash(npx eslint:*)",
+      "Bash(ren:*)",
+      "Bash(mv:*)"
     ],
     "deny": [],
     "ask": []
