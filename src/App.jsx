@@ -38,11 +38,15 @@ const App = () => {
   // Função para gerar dados de exemplo para teste
   const generateSampleDraws = () => {
     const sampleDraws = [];
+    const today = new Date();
+
     for (let i = 0; i < 100; i++) {
       const concurso = 2800 - i;
-      const date = new Date();
-      date.setDate(date.getDate() - i * 3);
-      
+      const date = new Date(today);
+      date.setDate(today.getDate() - i * 3);
+
+      const dataFormatada = date.toLocaleDateString('pt-BR');
+
       // Gerar 6 números aleatórios únicos
       const dezenas = [];
       while (dezenas.length < 6) {
@@ -52,10 +56,10 @@ const App = () => {
         }
       }
       dezenas.sort((a, b) => a - b);
-      
+
       sampleDraws.push({
         concurso,
-        data: date.toLocaleDateString('pt-BR'),
+        data: dataFormatada,
         dezenas,
         premiacaoTotal: Math.floor(Math.random() * 100000000),
         valorArrecadado: Math.floor(Math.random() * 200000000),
@@ -72,6 +76,8 @@ const App = () => {
         isMegaDaVirada: concurso === 2800 - i && new Date().getMonth() === 11
       });
     }
+
+    console.log(`[generateSampleDraws] ${sampleDraws.length} sorteios gerados de ${sampleDraws[sampleDraws.length-1].data} a ${sampleDraws[0].data}`);
     return sampleDraws;
   };
 
@@ -248,26 +254,39 @@ const App = () => {
 
   // Carregar dados automaticamente ao iniciar
   useEffect(() => {
+    // Versão do cache - incrementar quando houver mudanças no formato dos dados
+    const CACHE_VERSION = '2.0';
+    const currentVersion = localStorage.getItem('megasena_cache_version');
+
+    // Se a versão do cache mudou, limpar tudo
+    if (currentVersion !== CACHE_VERSION) {
+      console.log(`[App] Versão do cache mudou (${currentVersion} -> ${CACHE_VERSION}). Limpando cache antigo...`);
+      localStorage.clear();
+      localStorage.setItem('megasena_cache_version', CACHE_VERSION);
+    }
+
     // Primeiro, verificar se há dados completos em cache
     const cachedFullData = localStorage.getItem('megasena_data_full');
     const fullCacheDate = localStorage.getItem('megasena_data_full_date');
-    
+
     if (cachedFullData && fullCacheDate) {
       const cacheAge = Date.now() - new Date(fullCacheDate).getTime();
       const twentyFourHours = 24 * 60 * 60 * 1000; // Cache por 24h
-      
+
       if (cacheAge < twentyFourHours) {
-        console.log(`Usando dados completos do cache (${JSON.parse(cachedFullData).length} concursos)`);
-        setDraws(JSON.parse(cachedFullData));
+        const cachedDraws = JSON.parse(cachedFullData);
+        console.log(`[App] Usando dados completos do cache (${cachedDraws.length} concursos)`);
+        console.log('[App] Primeiras 3 datas do cache:', cachedDraws.slice(0, 3).map(d => ({ concurso: d.concurso, data: d.data })));
+        setDraws(cachedDraws);
         setIsFullDataLoaded(true);
         setLoadMode('full');
-        
+
         // Verificar se precisa atualizar em background
         const sixHours = 6 * 60 * 60 * 1000;
         if (cacheAge > sixHours) {
-          console.log('Atualizando dados em background...');
+          console.log('[App] Atualizando dados em background...');
           fetchDraws('full').then(() => {
-            console.log('Dados atualizados em background');
+            console.log('[App] Dados atualizados em background');
           });
         }
         return;
@@ -945,6 +964,19 @@ const App = () => {
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">Atualizar</span>
+                </button>
+                <button
+                  onClick={() => {
+                    console.log('[App] Limpando cache localStorage...');
+                    localStorage.clear();
+                    window.location.reload();
+                  }}
+                  className="flex-1 sm:flex-none px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 text-sm"
+                  disabled={loading}
+                  title="Limpar cache e recarregar"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="hidden sm:inline">Limpar Cache</span>
                 </button>
               </div>
               
